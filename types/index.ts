@@ -120,6 +120,16 @@ export interface AdminStats {
   totalQuestsCompleted: number;
 }
 
+export interface AdminCharts {
+  weeklyActiveUsers: { day: string; users: number }[];
+  userGrowth: { month: string; users: number }[];
+  habitCompletionTimeline: { date: string; completions: number }[];
+  xpTimeline: { date: string; xp: number }[];
+  completionRate: { date: string; rate: number }[];
+  categoryDistribution: { name: string; value: number }[];
+  xpByLevel: { name: string; value: number }[];
+}
+
 export interface AdminUserRow {
   uid: string;
   username: string;

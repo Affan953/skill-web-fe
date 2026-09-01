@@ -20,14 +20,9 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { MedalGlyph } from "@/lib/iconMapper";
 
 const FILTER_OPTIONS = [10, 25, 50, 100] as const;
-
-const MEDAL_EMOJI: Record<number, string> = {
-  1: "🥇",
-  2: "🥈",
-  3: "🥉",
-};
 
 function SkeletonRow() {
   return (
@@ -68,11 +63,9 @@ function ErrorState({
 
 function PodiumCard({
   entry,
-  medal,
   highlight,
 }: {
   entry: LeaderboardEntry;
-  medal: string;
   highlight: boolean;
 }) {
   const isFirst = entry.rank === 1;
@@ -88,7 +81,7 @@ function PodiumCard({
         highlight && "ring-2 ring-amber-400/50 shadow-md shadow-amber-100"
       )}
     >
-      <span className="mb-2 text-4xl">{medal}</span>
+      <MedalGlyph rank={entry.rank} className="mb-2 h-8 w-8" />
       <div
         className={cn(
           "mb-3 flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white",
@@ -305,7 +298,6 @@ function LeaderboardContent() {
                       <PodiumCard
                         key={entry.uid}
                         entry={entry}
-                        medal={MEDAL_EMOJI[entry.rank] ?? ""}
                         highlight={entry.uid === user?.uid}
                       />
                     ))}

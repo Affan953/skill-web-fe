@@ -184,6 +184,39 @@ function playTone(
   }
 }
 
+/**
+ * Plays a bundled audio file (e.g. an iPhone notification sound) from the
+ * public/ directory. Used instead of synthesized tones for notification sounds.
+ */
+function playAudioFile(path: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    unlockAudio();
+    const audio = new Audio(path);
+    audio.volume = 0.9;
+    void audio.play().catch(() => {
+      // Ignore autoplay restrictions; the context is unlocked on first
+      // interaction so later plays should succeed.
+    });
+  } catch {
+    // Ignore autoplay restrictions
+  }
+}
+
+/**
+ * "Ting" iPhone notification sound (tri-tone). Used for routine notifications.
+ */
+export function playIphoneTing(): void {
+  playAudioFile("/iphonething.mp3");
+}
+
+/**
+ * "Circles" iPhone notification sound. Used for high-importance notifications.
+ */
+export function playIphoneCircles(): void {
+  playAudioFile("/IphoneCircles.mp3");
+}
+
 export function playMissionSound(): void {
   playTone(523.25, "triangle", 0.2, 0.1);
   playTone(659.25, "triangle", 0.25, 0.1, 0.1);

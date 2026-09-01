@@ -7,6 +7,7 @@ import type { AnalyzerResult, Rank, RankInfo, VerificationPhase } from "@/lib/ve
 import { starsFromScore } from "@/lib/verification/helpers";
 import { formatGoal } from "@/lib/habitGoal";
 import { cn } from "@/lib/cn";
+import { CategoryGlyph, ActivityGlyph } from "@/lib/iconMapper";
 import {
   CheckCircle, ArrowRight, Star, Shield, Zap, Target, AlertTriangle,
   CheckCheck, Gauge, FileCheck, Quote, Crosshair, Flame, Activity, Trophy,
@@ -32,29 +33,10 @@ interface SystemVerificationProps {
   onStart: () => void;
 }
 
-const CATEGORY_ICONS: Record<HabitCategory, string> = {
-  Learning: "📚", Fitness: "💪", Reading: "📖", Meditation: "🧘",
-  Coding: "💻", Health: "💚", Productivity: "⚡", Finance: "💰",
-  Language: "🗣️", Custom: "🎯",
-};
-
 const CATEGORY_COLORS_ACCENT: Record<HabitCategory, string> = {
   Learning: "#2563EB", Fitness: "#10B981", Reading: "#2563EB", Meditation: "#10B981",
   Coding: "#2563EB", Health: "#10B981", Productivity: "#2563EB", Finance: "#10B981",
   Language: "#2563EB", Custom: "#6366F1",
-};
-
-const ACTIVITY_EMOJI: Record<string, string> = {
-  running: "🏃", walking: "🚶", jogging: "🏃", cycling: "🚴", swimming: "🏊",
-  badminton: "🏸", football: "⚽", basketball: "🏀", "gym workout": "🏋️",
-  "push up": "💪", "pull up": "💪", yoga: "🧘", stretching: "🤸", stretch: "🤸",
-  book: "📖", novel: "📚", documentation: "📄", "research paper": "📑", article: "📰",
-  english: "🗣️", japanese: "🗾", mathematics: "🧮", research: "🔬", "programming course": "💻",
-  "build feature": "🛠️", "fix bug": "🐛", leetcode: "🧩", "code review": "🔍", refactoring: "♻️",
-  "save money": "💰", "track expenses": "📊", "budget planning": "🧾", investing: "📈",
-  mindfulness: "🧘", "breathing exercise": "🌬️", "focus session": "🎯",
-  "drink water": "💧", sleep: "😴", medicine: "💊", "morning walk": "🌅",
-  "deep work": "⚡", "task management": "✅", "email cleanup": "📧", planning: "🗂️",
 };
 
 const METRIC_ICONS: Record<string, LucideIcon> = {
@@ -130,7 +112,6 @@ function analysisStatusColor(status: string): string {
 }
 
 function CategoryDataDisplay({ category, data, accentColor }: { category: HabitCategory; /* eslint-disable-line @typescript-eslint/no-explicit-any */ data: Record<string, any>; accentColor: string }) {
-  const icon = CATEGORY_ICONS[category] || "🎯";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const entries: { label: string; value: any; type: "text" | "bool" | "stars" | "number" }[] = [];
 
@@ -212,7 +193,7 @@ function CategoryDataDisplay({ category, data, accentColor }: { category: HabitC
   return (
     <div className="space-y-1.5">
       <div className="mb-2 flex items-center gap-1.5">
-        <span className="text-sm">{icon}</span>
+        <CategoryGlyph category={category} className="h-4 w-4" style={{ color: accentColor }} />
         <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-[#64748B]">{category}</span>
         <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${accentColor}20, transparent)` }} />
       </div>
@@ -349,7 +330,6 @@ export default function SystemVerification({
 
   const activityKey = (habit.activity ?? "").toLowerCase();
   const activityName = habit.activity || habit.category;
-  const activityIcon = (activityKey && ACTIVITY_EMOJI[activityKey]) || CATEGORY_ICONS[habit.category] || "🎯";
   const accent = CATEGORY_COLORS_ACCENT[habit.category] || "#2563EB";
   const isResult = phase === "result";
   const today = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -371,7 +351,7 @@ export default function SystemVerification({
           </div>
 
           <div className="flex items-center justify-center gap-2.5 rounded-xl border border-slate-100 bg-[#FAFBFC] px-4 py-2.5">
-            <span className="text-base">{activityIcon}</span>
+            <ActivityGlyph activity={activityKey} category={habit.category} className="h-4 w-4 text-[#2563EB]" />
             <div className="text-left">
               <p className="text-xs font-semibold text-[#0F172A]">{activityName}</p>
               {habit.activity && habit.activity !== habit.title && (
@@ -420,7 +400,7 @@ export default function SystemVerification({
               <span className="text-sm font-bold text-[#2563EB]">Mission Verified</span>
             </div>
             <div className="mt-3 flex items-center justify-center gap-2.5 rounded-xl border border-slate-100 bg-[#FAFBFC] px-4 py-2.5">
-              <span className="text-base">{activityIcon}</span>
+              <ActivityGlyph activity={activityKey} category={habit.category} className="h-4 w-4 text-[#2563EB]" />
               <div className="text-left">
                 <p className="text-xs font-semibold text-[#0F172A]">{activityName}</p>
                 {habit.activity && habit.activity !== habit.title && (

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { adminApi } from "@/lib/api";
-import type { AdminStats } from "@/types";
+import type { AdminStats, AdminCharts } from "@/types";
 import {
   Users,
   TrendingUp,
@@ -16,7 +16,12 @@ import {
   Loader2,
 } from "lucide-react";
 import StatCard from "@/components/admin/StatCard";
-import ChartPlaceholder from "@/components/admin/ChartPlaceholder";
+import {
+  GrowthTrendChart,
+  HabitCompletionsChart,
+  CategoryDistributionChart,
+  XpEarnedChart,
+} from "@/components/admin/AdminCharts";
 
 export default function AdminStatisticsPage() {
   const { getToken } = useFirebaseToken();
@@ -32,6 +37,19 @@ export default function AdminStatisticsPage() {
       const token = await getToken();
       if (!token) throw new Error("Not authenticated");
       return adminApi.getStats(token);
+    },
+    enabled: !!getToken,
+  });
+
+  const {
+    data: charts,
+    isLoading: chartsLoading,
+  } = useQuery<AdminCharts>({
+    queryKey: ["admin-charts"],
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      return adminApi.getCharts(token);
     },
     enabled: !!getToken,
   });
@@ -144,31 +162,28 @@ export default function AdminStatisticsPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ChartPlaceholder
-          title="User Growth"
-          description="New registrations over time"
-          type="area"
-        />
-        <ChartPlaceholder
-          title="Habit Completions"
-          description="Daily completions this month"
-          type="bar"
-        />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ChartPlaceholder
-          title="Category Distribution"
-          description="Habits by category"
-          type="donut"
-        />
-        <ChartPlaceholder
-          title="XP Earned"
-          description="Total XP earned over time"
-          type="line"
-        />
-      </div>
+      {!chartsLoading && charts && (
+        <>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <GrowthTrendChart charts={charts} />
+            <HabitCompletionsChart charts={charts} />
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <CategoryDistributionChart charts={charts} />
+            <XpEarnedChart charts={charts} />
+          </div>
+        </>
+      )}
+      {chartsLoading && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-80 animate-pulse rounded-xl border border-slate-200 bg-white"
+            />
+          ))}
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-6">
         <h3 className="text-sm font-semibold text-slate-900">

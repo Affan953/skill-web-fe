@@ -5,6 +5,7 @@ import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { adminApi } from "@/lib/api";
 import type { AdminAchievementRow } from "@/types";
 import { Loader2, AlertCircle, RotateCcw, Unlock } from "lucide-react";
+import { AchievementGlyph } from "@/lib/iconMapper";
 
 const CATEGORY_COLORS: Record<string, string> = {
   Habit: "bg-[#10B981]/10",
@@ -82,9 +83,9 @@ export default function AdminAchievementsPage() {
             >
               <div className="flex items-start justify-between">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl ${CATEGORY_COLORS[ach.category] ?? "bg-slate-100"}`}
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl text-[#2563EB] ${CATEGORY_COLORS[ach.category] ?? "bg-slate-100"}`}
                 >
-                  {ach.icon}
+                  <AchievementGlyph icon={ach.icon} className="h-6 w-6" />
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#10B981]/10 px-2.5 py-0.5 text-xs font-medium text-[#10B981]">
                   <Unlock className="h-3 w-3" />

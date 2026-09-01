@@ -11,12 +11,8 @@ import {
 import {
   type QueuedNotification,
   type SystemNotificationData,
-  playMissionSound,
-  playLevelUpSound,
-  playAchievementSound,
-  playXpSound,
-  playQuestSound,
-  playSoftBlip,
+  playIphoneTing,
+  playIphoneCircles,
   attachAudioUnlock,
 } from "@/lib/systemNotification";
 
@@ -29,29 +25,13 @@ function nextId(): string {
 function triggerSoundForType(type: string) {
   switch (type) {
     case "LEVEL_UP":
-      playLevelUpSound();
-      break;
     case "ACHIEVEMENT_UNLOCKED":
     case "NEW_TITLE":
-      playAchievementSound();
-      break;
-    case "XP_GAINED":
-      playXpSound();
-      break;
     case "MISSION_VERIFIED":
-      playMissionSound();
+      playIphoneCircles();
       break;
-    case "QUEST_COMPLETED":
-    case "STREAK_UPDATED":
-      playQuestSound();
-      break;
-    case "REFLECTION_SAVED":
-    case "JOURNEY_RECORDED":
-    case "CATEGORY_IMPROVED":
-    case "WEEKLY_REVIEW":
-    case "MONTHLY_REPORT":
     default:
-      playSoftBlip();
+      playIphoneTing();
       break;
   }
 }

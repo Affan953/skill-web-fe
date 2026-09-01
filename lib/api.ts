@@ -15,6 +15,7 @@ import type {
   AdminNotificationRow,
   AdminReflectionRow,
   ReflectionAnalytics,
+  AdminCharts,
   XpHistoryEntry,
   HabitHistoryEntry,
   UserStatistics,
@@ -230,6 +231,9 @@ export const notificationsApi = {
 export const adminApi = {
   getStats: (token: string) =>
     apiRequest<AdminStats>("/admin/stats", {}, token),
+
+  getCharts: (token: string) =>
+    apiRequest<AdminCharts>("/admin/charts", {}, token),
 
   getUsers: (token: string, search?: string) => {
     const params = search ? `?search=${encodeURIComponent(search)}` : "";

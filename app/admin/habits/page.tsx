@@ -14,12 +14,6 @@ const difficultyColors: Record<string, string> = {
   Hard: "bg-red-100 text-red-600",
 };
 
-const statusColors: Record<string, string> = {
-  Active: "bg-[#10B981]/10 text-[#10B981]",
-  Paused: "bg-amber-100 text-amber-600",
-  Archived: "bg-slate-100 text-slate-500",
-};
-
 export default function AdminHabitsPage() {
   const { getToken } = useFirebaseToken();
 
@@ -33,9 +27,9 @@ export default function AdminHabitsPage() {
     enabled: !!getToken,
   });
 
-  const data = useMemo(() => habits.map((h) => ({ ...h, status: "Active" as const })), [habits]);
+  const data = useMemo(() => habits, [habits]);
 
-  const columns: Column<AdminHabitRow & { status: "Active" }>[] = useMemo(
+  const columns: Column<AdminHabitRow>[] = useMemo(
     () => [
       {
         key: "title",
@@ -86,15 +80,18 @@ export default function AdminHabitsPage() {
         ),
       },
       {
-        key: "status",
-        label: "Status",
+        key: "isCompleted",
+        label: "Completed Today",
+        sortable: true,
         render: (item) => (
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              statusColors[item.status] || ""
+              item.isCompleted
+                ? "bg-[#10B981]/10 text-[#10B981]"
+                : "bg-slate-100 text-slate-500"
             }`}
           >
-            {item.status}
+            {item.isCompleted ? "Yes" : "No"}
           </span>
         ),
       },
@@ -146,7 +143,7 @@ export default function AdminHabitsPage() {
           </button>
         </div>
       ) : (
-        <DataTable<AdminHabitRow & { status: "Active" }>
+        <DataTable<AdminHabitRow>
           columns={columns}
           data={data}
           searchPlaceholder="Search habits..."

@@ -18,6 +18,7 @@ import {
   Target,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { AchievementGlyph } from "@/lib/iconMapper";
 
 const CATEGORY_LABELS: Record<AchievementCategory, string> = {
   Habit: "Habit",
@@ -112,7 +113,9 @@ function DetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between">
-          <span className="text-5xl">{achievement.icon}</span>
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2563EB]/10 text-[#2563EB]">
+            <AchievementGlyph icon={achievement.icon} className="h-7 w-7" />
+          </span>
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
@@ -440,7 +443,9 @@ function AchievementsContent() {
                       )}
                     >
                       <div className="mb-3 flex items-start justify-between">
-                        <span className="text-3xl">{achievement.icon}</span>
+                        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563EB]/10 text-[#2563EB]">
+                          <AchievementGlyph icon={achievement.icon} className="h-6 w-6" />
+                        </span>
                         {achievement.unlocked ? (
                           <CheckCircle2 className="h-5 w-5 text-[#10B981]" />
                         ) : (

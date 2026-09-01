@@ -15,10 +15,15 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { adminApi } from "@/lib/api";
-import type { AdminStats } from "@/types";
+import type { AdminStats, AdminCharts } from "@/types";
 import StatCard from "@/components/admin/StatCard";
-import ChartPlaceholder from "@/components/admin/ChartPlaceholder";
 import ActivityFeed from "@/components/admin/ActivityFeed";
+import {
+  WeeklyActiveUsersChart,
+  XpDistributionChart,
+  CompletionRateChart,
+  GrowthTrendChart,
+} from "@/components/admin/AdminCharts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
@@ -52,6 +57,19 @@ export default function AdminDashboardPage() {
       return res.json();
     },
     refetchInterval: 30000,
+  });
+
+  const {
+    data: charts,
+    isLoading: chartsLoading,
+  } = useQuery<AdminCharts, Error>({
+    queryKey: ["admin-charts"],
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      return adminApi.getCharts(token);
+    },
+    enabled: !!getToken,
   });
 
   const statCards = stats
@@ -162,31 +180,24 @@ export default function AdminDashboardPage() {
       )}
 
       {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ChartPlaceholder
-          title="Weekly Active Users"
-          description="Users active per day this week"
-          type="bar"
-        />
-        <ChartPlaceholder
-          title="XP Distribution"
-          description="XP earned across all users"
-          type="donut"
-        />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ChartPlaceholder
-          title="Habit Completion Rate"
-          description="Daily completion percentage"
-          type="line"
-        />
-        <ChartPlaceholder
-          title="Growth Trend"
-          description="User registrations over time"
-          type="area"
-        />
-      </div>
+      {!chartsLoading && charts && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <WeeklyActiveUsersChart charts={charts} />
+          <XpDistributionChart charts={charts} />
+          <CompletionRateChart charts={charts} />
+          <GrowthTrendChart charts={charts} />
+        </div>
+      )}
+      {chartsLoading && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-80 animate-pulse rounded-xl border border-slate-200 bg-white"
+            />
+          ))}
+        </div>
+      )}
 
       {/* Recent Activity */}
       <div className="grid gap-6 lg:grid-cols-3">

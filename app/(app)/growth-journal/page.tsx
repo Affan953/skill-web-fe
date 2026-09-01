@@ -3,9 +3,10 @@
 import { useReflections } from "@/hooks/useReflections";
 import {
   BookOpen, Flame, Zap, TrendingUp, Loader2, AlertTriangle,
-  Star, Clock, BarChart3, Calendar,
+  Star, Clock, BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { CategoryGlyph } from "@/lib/iconMapper";
 import type { Reflection } from "@/types";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -14,12 +15,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   Coding: "bg-[#2563EB]/10 text-[#2563EB]", Health: "bg-[#10B981]/10 text-[#10B981]",
   Productivity: "bg-amber-500/10 text-amber-500", Finance: "bg-[#10B981]/10 text-[#10B981]",
   Language: "bg-pink-500/10 text-pink-500", Custom: "bg-slate-100 text-slate-500",
-};
-
-const CATEGORY_ICONS: Record<string, string> = {
-  Language: "🗣️", Coding: "💻", Fitness: "🏋️", Reading: "📖",
-  Meditation: "🧘", Health: "💚", Productivity: "⚡", Finance: "💰",
-  Learning: "📚", Custom: "✨",
 };
 
 function TimelineEntry({ reflection }: { reflection: Reflection }) {
@@ -31,9 +26,9 @@ function TimelineEntry({ reflection }: { reflection: Reflection }) {
   return (
     <div className="relative flex gap-4 pb-8 last:pb-0">
       <div className="flex flex-col items-center">
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl text-lg",
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl",
           CATEGORY_COLORS[reflection.category] ?? "bg-slate-100 text-slate-500")}>
-          {CATEGORY_ICONS[reflection.category] || "✨"}
+          <CategoryGlyph category={reflection.category} className="h-5 w-5" />
         </div>
         <div className="mt-2 h-full w-px bg-slate-200" />
       </div>
@@ -135,8 +130,8 @@ function JournalContent() {
               <h2 className="mb-3 text-sm font-semibold text-slate-900">Categories Explored This Week</h2>
               <div className="flex flex-wrap gap-2">
                 {summary.categoriesExplored.map((cat) => (
-                  <span key={cat} className={cn("rounded-full px-3 py-1 text-xs font-medium", CATEGORY_COLORS[cat] ?? "bg-slate-100 text-slate-500")}>
-                    {CATEGORY_ICONS[cat] || "✨"} {cat}
+                  <span key={cat} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium", CATEGORY_COLORS[cat] ?? "bg-slate-100 text-slate-500")}>
+                    <CategoryGlyph category={cat} className="h-3.5 w-3.5" /> {cat}
                   </span>
                 ))}
               </div>
