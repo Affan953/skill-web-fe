@@ -1,10 +1,100 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { useAuth } from "@/contexts/AuthContext";
 import { usersApi } from "@/lib/api";
-import { Settings, Loader2, CheckCircle2, User } from "lucide-react";
+import { usePaymentHistory } from "@/hooks/usePayments";
+import { formatIDR, formatShortDate } from "@/lib/format";
+import {
+  Settings,
+  Loader2,
+  CheckCircle2,
+  User,
+  Sparkles,
+  CreditCard,
+} from "lucide-react";
+
+function PaymentHistory() {
+  const { data, isLoading } = usePaymentHistory();
+
+  return (
+    <div className="mt-5">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        Payment History
+      </p>
+      {isLoading ? (
+        <div className="space-y-2">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-14 animate-pulse rounded-xl bg-slate-100"
+            />
+          ))}
+        </div>
+      ) : !data || data.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">
+          No payments yet. Upgrade to Premium to get started.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {data.map((p) => (
+            <div
+              key={p.orderId}
+              className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+            >
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  SkillUp Premium
+                </p>
+                <p className="text-xs text-slate-500">
+                  {p.createdAt
+                    ? formatShortDate(p.createdAt)
+                    : ""}{" "}
+                  · <span className="font-mono">{p.orderId}</span>
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-slate-900 tabular-nums">
+                  {formatIDR(p.amount)}
+                </p>
+                <StatusBadge status={p.status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  PAID: "Paid",
+  PENDING: "Pending",
+  FAILED: "Failed",
+  EXPIRED: "Expired",
+  CANCELLED: "Cancelled",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    PAID: "bg-[#10B981]/10 text-[#10B981]",
+    PENDING: "bg-[#F59E0B]/10 text-[#F59E0B]",
+    FAILED: "bg-red-100 text-red-600",
+    EXPIRED: "bg-slate-100 text-slate-500",
+    CANCELLED: "bg-slate-100 text-slate-500",
+  };
+  return (
+    <span
+      className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        styles[status] ?? "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
 
 function SettingsContent() {
   const { user, refreshUser, firebaseUser } = useAuth();
@@ -107,6 +197,53 @@ function SettingsContent() {
                   </button>
                 </div>
               </form>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="mb-4 flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-[#2563EB]" />
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Billing & Subscription
+                </h3>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2563EB]/10">
+                    <Sparkles className="h-5 w-5 text-[#2563EB]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {user?.isPremium ? "Premium" : "Free Plan"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {user?.isPremium && user?.premiumExpiresAt
+                        ? `Active until ${new Date(
+                            user.premiumExpiresAt
+                          ).toLocaleDateString("en-US", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}`
+                        : user?.isPremium
+                          ? "Active"
+                          : "Your free plan includes all essential features."}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/upgrade"
+                  className={
+                    user?.isPremium
+                      ? "inline-flex items-center gap-1.5 rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-300"
+                      : "inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#2563EB]/20 transition-all hover:shadow-md"
+                  }
+                >
+                  {user?.isPremium ? "Manage" : "Upgrade"}
+                </Link>
+              </div>
+
+              <PaymentHistory />
             </section>
 
             <section className="rounded-xl border border-slate-200 bg-white p-6">

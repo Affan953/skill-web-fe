@@ -15,6 +15,9 @@ import {
   BookOpenCheck,
   Target,
   Crown,
+  Sparkles,
+  CreditCard,
+  ShieldCheck,
 } from "lucide-react";
 
 export type SidebarRole = "user" | "admin";
@@ -63,6 +66,7 @@ export const navigationConfig: Record<SidebarRole, RoleNavigationConfig> = {
     account: {
       title: "Account",
       items: [
+        { label: "Upgrade", href: "/upgrade", icon: Sparkles },
         { label: "Notifications", href: "/notifications", icon: Bell },
         { label: "Profile", href: "/profile", icon: User },
         { label: "Settings", href: "/settings", icon: Settings },
@@ -75,6 +79,12 @@ export const navigationConfig: Record<SidebarRole, RoleNavigationConfig> = {
       items: [
         { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
         { label: "Users", href: "/admin/users", icon: Users },
+        { label: "Payments", href: "/admin/payments", icon: CreditCard },
+        {
+          label: "Subscriptions",
+          href: "/admin/subscriptions",
+          icon: ShieldCheck,
+        },
         { label: "Habits", href: "/admin/habits", icon: CheckSquare },
         { label: "Reflections", href: "/admin/reflections", icon: BookOpenCheck },
         { label: "Achievements", href: "/admin/achievements", icon: Trophy },

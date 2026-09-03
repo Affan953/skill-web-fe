@@ -6,7 +6,6 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useFirebaseToken } from "@/hooks/useFirebaseToken";
-import { useAuth } from "@/contexts/AuthContext";
 import { habitsApi } from "@/lib/api";
 import type { Habit, HabitCategory, HabitDifficulty } from "@/types";
 import { USER_QUERY_KEY } from "@/hooks/useUserQuery";
@@ -15,7 +14,6 @@ export const HABITS_KEY = ["habits"];
 
 export function useHabits() {
   const { getToken } = useFirebaseToken();
-  const { refreshUser } = useAuth();
   const queryClient = useQueryClient();
 
   const habitsQuery = useQuery<Habit[], Error>({
@@ -29,7 +27,6 @@ export function useHabits() {
   });
 
   const invalidateRelatedQueries = async () => {
-    await refreshUser();
     queryClient.invalidateQueries({ queryKey: HABITS_KEY });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });

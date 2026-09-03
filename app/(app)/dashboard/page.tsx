@@ -6,7 +6,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useUserQuery } from "@/hooks/useUserQuery";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useReflections } from "@/hooks/useReflections";
+import GrowthOverviewSection from "@/components/dashboard/GrowthOverviewSection";
 import { formatGoal } from "@/lib/habitGoal";
+import { levelSpan, xpIntoLevel, xpRemaining, levelPercent } from "@/lib/xp";
 import Link from "next/link";
 import {
   Zap,
@@ -136,8 +138,10 @@ function DashboardContent() {
   const streak = user?.currentStreak ?? 0;
   const totalHabits = user?.totalHabits ?? 0;
 
-  const xpNeeded = level * 100;
-  const xpProgress = Math.min(Math.round((xp / xpNeeded) * 100), 100);
+  const xpNeeded = levelSpan(level);
+  const xpInto = xpIntoLevel(level, xp);
+  const xpLeft = xpRemaining(level, xp);
+  const xpProgress = levelPercent(level, xp);
 
   const MOTIVATIONAL_QUOTES = [
     "Small steps every day lead to big changes.",
@@ -189,7 +193,7 @@ function DashboardContent() {
                   <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
                     <span>XP Progress</span>
                     <span>
-                      {xp} / {xpNeeded}
+                      {xpInto} / {xpNeeded}
                     </span>
                   </div>
                   <div
@@ -206,7 +210,7 @@ function DashboardContent() {
                     />
                   </div>
                   <p className="mt-1 text-right text-xs text-slate-400">
-                    {xpNeeded - xp} XP to Level {level + 1}
+                    {xpLeft} XP to Level {level + 1}
                   </p>
                 </div>
               </div>
@@ -272,7 +276,7 @@ function DashboardContent() {
                 <div className="flex-1">
                   <div className="mb-2 flex items-baseline justify-between">
                     <span className="text-2xl font-bold text-slate-900">
-                      {xp.toLocaleString()} XP
+                      {xpInto.toLocaleString()} XP
                     </span>
                     <span className="text-sm text-slate-500">
                       / {xpNeeded.toLocaleString()} XP
@@ -292,7 +296,7 @@ function DashboardContent() {
                     />
                   </div>
                   <p className="mt-2 text-sm text-slate-400">
-                    {xpProgress}% — {xpNeeded - xp} XP remaining to Level{" "}
+                    {xpProgress}% — {xpLeft} XP remaining to Level{" "}
                     {level + 1}
                   </p>
                 </div>
@@ -528,6 +532,8 @@ function DashboardContent() {
               </div>
             </div>
           </section>
+
+          <GrowthOverviewSection />
     </div>
   );
 }

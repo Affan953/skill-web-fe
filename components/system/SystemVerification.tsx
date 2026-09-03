@@ -36,7 +36,7 @@ interface SystemVerificationProps {
 const CATEGORY_COLORS_ACCENT: Record<HabitCategory, string> = {
   Learning: "#2563EB", Fitness: "#10B981", Reading: "#2563EB", Meditation: "#10B981",
   Coding: "#2563EB", Health: "#10B981", Productivity: "#2563EB", Finance: "#10B981",
-  Language: "#2563EB", Custom: "#6366F1",
+  Language: "#2563EB", Custom: "#6366F1", Uncategorized: "#64748B",
 };
 
 const METRIC_ICONS: Record<string, LucideIcon> = {

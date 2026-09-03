@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { habitsApi, achievementsApi, progressApi } from "@/lib/api";
 import type { Habit, Achievement, UserStatistics } from "@/types";
+import { levelSpan, xpIntoLevel, xpRemaining, levelPercent } from "@/lib/xp";
 import {
   BarChart3,
   RotateCcw,
@@ -193,8 +194,10 @@ function StatisticsContent() {
       ? Math.round((unlockedAchievements / totalAchievements) * 100)
       : 0;
 
-  const xpNeeded = level * 100;
-  const xpProgress = Math.min(Math.round((xp / xpNeeded) * 100), 100);
+  const xpNeeded = levelSpan(level);
+  const xpInto = xpIntoLevel(level, xp);
+  const xpLeft = xpRemaining(level, xp);
+  const xpProgress = levelPercent(level, xp);
 
   const displayName =
     user?.username || "Adventurer";
@@ -342,7 +345,7 @@ function StatisticsContent() {
                   Level {level}
                 </span>
                 <span className="text-xs text-slate-500">
-                  {xp.toLocaleString()} / {xpNeeded.toLocaleString()} XP
+                  {xpInto.toLocaleString()} / {xpNeeded.toLocaleString()} XP
                 </span>
               </div>
               <div
@@ -358,7 +361,7 @@ function StatisticsContent() {
                 />
               </div>
               <p className="mt-1.5 text-right text-xs text-slate-400">
-                {xpProgress}% — {xpNeeded - xp} XP to Level {level + 1}
+                {xpProgress}% — {xpLeft} XP to Level {level + 1}
               </p>
             </div>
           </section>

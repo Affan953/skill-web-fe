@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -41,15 +42,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
+  const verifiedUidRef = useRef<string | null>(null);
+  const fetchingRef = useRef(false);
 
   const fetchAndSetUser = useCallback(async (fbUser: FirebaseUser) => {
+    if (verifiedUidRef.current === fbUser.uid && fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       const token = await fbUser.getIdToken();
       const userData = await authApi.verify(token);
       setUser(userData);
+      verifiedUidRef.current = fbUser.uid;
     } catch (error) {
-      console.error("Failed to verify user with backend:", error);
-      setUser(null);
+      // Keep the current user session. A transient backend failure (network,
+      // rate-limit, etc.) should NOT log the user out — the Firebase session
+      // is still valid. Only an explicit logout clears the user.
+      console.error("Failed to refresh user from backend:", error);
+    } finally {
+      fetchingRef.current = false;
     }
   }, []);
 

@@ -73,6 +73,11 @@ const CATEGORY_QUESTIONS: Record<
     { question: "How was your focus?", key: "focus", placeholder: "e.g. Highly focused" },
     { question: "Duration?", key: "duration", placeholder: "e.g. 1 hour" },
   ],
+  Uncategorized: [
+    { question: "How was it?", key: "mood", placeholder: "e.g. Good, productive" },
+    { question: "Any notes?", key: "note", placeholder: "e.g. Made progress on my goal" },
+    { question: "What's next?", key: "nextGoal", placeholder: "e.g. Continue tomorrow" },
+  ],
 };
 
 export default function ReflectionModal({

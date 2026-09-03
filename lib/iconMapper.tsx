@@ -26,6 +26,7 @@ import {
   Trophy,
   Award,
   Star,
+  CircleDashed,
 } from "lucide-react";
 import type { HabitCategory } from "@/types";
 
@@ -40,6 +41,7 @@ export const CATEGORY_ICON_MAP: Record<HabitCategory, LucideIcon> = {
   Meditation: Brain,
   Language: Languages,
   Custom: Sparkles,
+  Uncategorized: CircleDashed,
 };
 
 const ACTIVITY_ICON_MAP: Record<string, LucideIcon> = {

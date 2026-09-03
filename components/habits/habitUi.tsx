@@ -10,6 +10,7 @@ import {
   Smile,
   Sparkles,
   Wallet,
+  CircleDashed,
 } from "lucide-react";
 import type { HabitCategory, HabitDifficulty } from "@/types";
 
@@ -24,6 +25,7 @@ export const CATEGORY_OPTIONS: HabitCategory[] = [
   "Finance",
   "Language",
   "Custom",
+  "Uncategorized",
 ];
 
 export const CATEGORY_ICONS: Record<
@@ -40,6 +42,7 @@ export const CATEGORY_ICONS: Record<
   Meditation: Brain,
   Language: Languages,
   Custom: Smile,
+  Uncategorized: CircleDashed,
 };
 
 export const CATEGORY_ICON_STYLE: Record<string, string> = {
@@ -53,6 +56,7 @@ export const CATEGORY_ICON_STYLE: Record<string, string> = {
   Finance: "bg-[#10B981]/10 text-[#10B981]",
   Language: "bg-[#8B5CF6]/10 text-[#8B5CF6]",
   Custom: "bg-[#64748B]/10 text-[#64748B]",
+  Uncategorized: "bg-[#64748B]/10 text-[#64748B]",
 };
 
 export const CATEGORY_CHIP: Record<string, string> = {
@@ -66,6 +70,7 @@ export const CATEGORY_CHIP: Record<string, string> = {
   Finance: "bg-[#10B981]/10 text-[#10B981]",
   Language: "bg-[#8B5CF6]/10 text-[#8B5CF6]",
   Custom: "bg-[#64748B]/10 text-[#64748B]",
+  Uncategorized: "bg-[#64748B]/10 text-[#64748B]",
 };
 
 export const DIFFICULTY_CHIP: Record<HabitDifficulty, string> = {

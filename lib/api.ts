@@ -1,6 +1,7 @@
 import type {
   User,
   Habit,
+  CustomCategory,
   Achievement,
   DailyQuest,
   LeaderboardEntry,
@@ -23,6 +24,12 @@ import type {
   ReflectionSummary,
   WeeklyReview,
   MonthlyReview,
+  CreatePaymentResult,
+  PaymentStatusResult,
+  PaymentRecord,
+  GrowthOverview,
+  AdminPaymentDashboard,
+  AdminSubscriptionRow,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -153,6 +160,25 @@ export const habitsApi = {
     ),
 };
 
+export const customCategoriesApi = {
+  getAll: (token: string) =>
+    apiRequest<CustomCategory[]>("/custom-categories", {}, token),
+
+  create: (token: string, data: { name: string; icon: string }) =>
+    apiRequest<CustomCategory>(
+      "/custom-categories",
+      { method: "POST", body: JSON.stringify(data) },
+      token
+    ),
+
+  remove: (id: string, token: string) =>
+    apiRequest<{ message: string }>(
+      `/custom-categories/${id}`,
+      { method: "DELETE" },
+      token
+    ),
+};
+
 export const achievementsApi = {
   getAll: (token: string) =>
     apiRequest<Achievement[]>("/achievements", {}, token),
@@ -263,6 +289,51 @@ export const adminApi = {
   getReflectionAnalytics: (token: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<Record<string, any>>("/admin/reflection-analytics", {}, token),
+
+  getPayments: (token: string, search?: string) => {
+    const params = search ? `?search=${encodeURIComponent(search)}` : "";
+    return apiRequest<AdminPaymentDashboard>(
+      `/admin/payments${params}`,
+      {},
+      token
+    );
+  },
+
+  getSubscriptions: (
+    token: string,
+    status?: string,
+    search?: string
+  ) => {
+    const params = new URLSearchParams();
+    if (status && status !== "ALL") params.set("status", status);
+    if (search) params.set("search", search);
+    const qs = params.toString();
+    return apiRequest<AdminSubscriptionRow[]>(
+      `/admin/subscriptions${qs ? `?${qs}` : ""}`,
+      {},
+      token
+    );
+  },
+};
+
+export const paymentsApi = {
+  create: (token: string, plan: string) =>
+    apiRequest<CreatePaymentResult>(
+      "/payments/midtrans/create",
+      { method: "POST", body: JSON.stringify({ plan }) },
+      token
+    ),
+
+  getStatus: (token: string, orderId: string) =>
+    apiRequest<PaymentStatusResult>(`/payments/status/${orderId}`, {}, token),
+
+  getHistory: (token: string) =>
+    apiRequest<PaymentRecord[]>("/payments/history", {}, token),
+};
+
+export const premiumApi = {
+  getGrowthOverview: (token: string) =>
+    apiRequest<GrowthOverview>("/premium/growth-overview", {}, token),
 };
 
 export const progressApi = {

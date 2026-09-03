@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { LogOut, Menu } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserQuery } from "@/hooks/useUserQuery";
 import NotificationBadge from "@/components/notifications/NotificationBadge";
 
 interface TopNavbarProps {
@@ -11,7 +12,8 @@ interface TopNavbarProps {
 }
 
 export default function TopNavbar({ onMenuToggle }: TopNavbarProps) {
-  const { user, logout, firebaseUser } = useAuth();
+  const { logout, firebaseUser } = useAuth();
+  const { user } = useUserQuery();
 
   const displayName =
     user?.username || firebaseUser?.displayName || "Adventurer";

@@ -3,6 +3,7 @@
 import { Flame, Zap } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useUserQuery } from "@/hooks/useUserQuery";
+import { levelPercent } from "@/lib/xp";
 
 interface UserGrowthCardProps {
   collapsed: boolean;
@@ -55,8 +56,7 @@ export default function UserGrowthCard({ collapsed }: UserGrowthCardProps) {
   const streak = user?.currentStreak ?? 0;
 
   // Display-only level progress (mirrors the dashboard's XP bar).
-  const xpNeeded = Math.max(level, 1) * 100;
-  const xpPercent = Math.min(Math.round((xp / xpNeeded) * 100), 100);
+  const xpPercent = levelPercent(level, xp);
 
   const unfoldDelay = collapsed ? "0ms" : "90ms";
 

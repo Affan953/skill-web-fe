@@ -75,6 +75,13 @@ export const CATEGORY_MOTIVATIONAL_MESSAGES: Record<HabitCategory, string[]> = {
     "Consistency beats intensity.",
     "Progress, not perfection.",
   ],
+  Uncategorized: [
+    "Small steps every day lead to big changes.",
+    "Your future self will thank you.",
+    "Discipline is choosing between what you want now and what you want most.",
+    "Consistency beats intensity.",
+    "Progress, not perfection.",
+  ],
 };
 
 /**
@@ -107,6 +114,7 @@ export const CATEGORY_PROOF_PROMPTS: Record<HabitCategory, string> = {
   Finance: "What did you do with your finances?",
   Language: "What did you practice or learn?",
   Custom: "What did you accomplish?",
+  Uncategorized: "What did you accomplish?",
 };
 
 /**
@@ -146,4 +154,5 @@ export const CATEGORY_EMOJI_MAP: Record<HabitCategory, string> = {
   Finance: "💰",
   Language: "🗣️",
   Custom: "🎯",
+  Uncategorized: "🗂️",
 };

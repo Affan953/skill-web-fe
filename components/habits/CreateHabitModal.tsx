@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   X,
   ArrowLeft,
+  ArrowRight,
   Check,
   Sparkles,
   BookOpen,
@@ -15,11 +17,25 @@ import {
   Briefcase,
   Brain,
   Smile,
+  Lightbulb,
   Loader2,
   ChevronRight,
   Target,
+  CookingPot,
+  Palette,
+  Music,
+  PenLine,
+  Gamepad2,
+  Sprout,
+  Scissors,
+  PawPrint,
+  Music2,
+  Brush,
+  Mic,
+  Wrench,
+  CircleDashed,
 } from "lucide-react";
-import type { HabitCategory, HabitDifficulty } from "@/types";
+import type { HabitCategory, HabitDifficulty, CustomCategory } from "@/types";
 import {
   CATEGORY_ORDER,
   HABIT_CATEGORIES,
@@ -32,6 +48,8 @@ import { cn } from "@/lib/cn";
 import SuggestionChips, {
   type SuggestionChipItem,
 } from "@/components/habits/SuggestionChips";
+import IconSelector from "@/components/ui/IconSelector";
+import { useCustomCategories } from "@/hooks/useCustomCategories";
 
 const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Learning: BookOpen,
@@ -43,7 +61,32 @@ const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>
   Productivity: Briefcase,
   Meditation: Brain,
   Custom: Smile,
+  Uncategorized: CircleDashed,
 };
+
+const CUSTOM_ICONS: { icon: LucideIcon; label: string }[] = [
+  { icon: CookingPot, label: "Cooking" },
+  { icon: Palette, label: "Art" },
+  { icon: Music, label: "Music" },
+  { icon: PenLine, label: "Writing" },
+  { icon: Gamepad2, label: "Gaming" },
+  { icon: Sprout, label: "Gardening" },
+  { icon: Scissors, label: "Crafts" },
+  { icon: PawPrint, label: "Pets" },
+  { icon: Music2, label: "Dance" },
+  { icon: Brush, label: "Cleaning" },
+  { icon: Mic, label: "Speaking" },
+  { icon: Wrench, label: "Skills" },
+];
+
+// Generic starting points used when no category catalog applies (custom or skipped).
+const FALLBACK_ACTIVITIES = [
+  "Practice",
+  "Review Notes",
+  "Deep Work",
+  "Journaling",
+  "Daily Planning",
+];
 
 const DIFFICULTIES: { value: HabitDifficulty; xp: number; hint: string }[] = [
   { value: "Easy", xp: 10, hint: "A light daily commitment" },
@@ -114,6 +157,13 @@ export default function CreateHabitModal({
   const [reminderTime, setReminderTime] = useState("");
   const [attemptedStep, setAttemptedStep] = useState(0);
 
+  const { customCategories, createCategory } = useCustomCategories();
+
+  const [customSectionOpen, setCustomSectionOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customIcon, setCustomIcon] = useState("Cooking");
+  const [selectedCustomId, setSelectedCustomId] = useState<string | null>(null);
+
   useEffect(() => {
     if (open) {
       const raf = requestAnimationFrame(() =>
@@ -143,21 +193,29 @@ export default function CreateHabitModal({
 
   const categories = useMemo(() => {
     const order = CATEGORY_ORDER.filter((c) => c !== "Custom");
-    const custom = HABIT_CATEGORIES.find((c) => c.category === "Custom")!;
-    return [...order.map((c) => HABIT_CATEGORIES.find((x) => x.category === c)!), custom];
+    return order.map((c) => HABIT_CATEGORIES.find((x) => x.category === c)!);
   }, []);
 
   const categoryDef = category ? getCategory(category) : undefined;
 
-  // Activity suggestions are OPTIONAL conveniences derived from the catalog.
-  // They never block the user from typing any activity they want.
+  const renderCustomIcon = (iconName: string) => {
+    const found = CUSTOM_ICONS.find((o) => o.label === iconName);
+    return found ? found.icon : Smile;
+  };
+
+  // Activity suggestions are OPTIONAL conveniences derived from the catalog,
+  // or from a generic pool when the category is custom or was skipped. They
+  // never block the user from typing any activity they want.
   const activitySuggestions = useMemo(() => {
-    const all = categoryDef?.activities.map((a) => a.name) ?? [];
+    const all =
+      categoryDef && categoryDef.activities.length > 0
+        ? categoryDef.activities.map((a) => a.name)
+        : FALLBACK_ACTIVITIES;
     const q = activityText.trim().toLowerCase();
     const filtered = q
       ? all.filter((name) => name.toLowerCase().includes(q))
       : all;
-    return filtered.slice(0, 6);
+    return (filtered.length > 0 ? filtered : all).slice(0, 6);
   }, [categoryDef, activityText]);
 
   const resolvedGoalLabel =
@@ -167,7 +225,14 @@ export default function CreateHabitModal({
     if (attemptedStep !== step) return null;
     switch (step) {
       case 1:
-        return category ? null : "Choose a category to continue.";
+        if (category === "Custom" && customSectionOpen) {
+          return customName.trim()
+            ? null
+            : "Name your custom category to continue.";
+        }
+        return category
+          ? null
+          : "Choose a category, or skip to continue.";
       case 2:
         return activityText.trim() ? null : "Tell us what you'd like to work on.";
       case 3:
@@ -193,6 +258,10 @@ export default function CreateHabitModal({
     setDescription("");
     setDifficulty("Easy");
     setReminderTime("");
+    setCustomSectionOpen(false);
+    setCustomName("");
+    setCustomIcon("Cooking");
+    setSelectedCustomId(null);
   };
 
   const handleClose = () => {
@@ -203,7 +272,61 @@ export default function CreateHabitModal({
   const selectCategory = (c: HabitCategory) => {
     // Changing category never destroys already-entered activity/goal input.
     setCategory(c);
+    setCustomSectionOpen(false);
+    setSelectedCustomId(null);
     setAttemptedStep(0);
+    setStep(2);
+  };
+
+  const toggleCustom = () => {
+    if (customSectionOpen) {
+      // Closing the custom panel deselects the Custom card.
+      setCustomSectionOpen(false);
+      setCategory((c) => (c === "Custom" ? null : c));
+    } else {
+      setCustomSectionOpen(true);
+      setCategory("Custom");
+    }
+    setSelectedCustomId(null);
+    setAttemptedStep(0);
+  };
+
+  const selectSavedCustom = (cc: CustomCategory) => {
+    setCategory("Custom");
+    setCustomSectionOpen(false);
+    setSelectedCustomId(cc.id);
+    if (!activityText.trim()) setActivityText(cc.name);
+    setAttemptedStep(0);
+    setStep(2);
+  };
+
+  const skipCategory = () => {
+    setCategory("Uncategorized");
+    setCustomSectionOpen(false);
+    setSelectedCustomId(null);
+    setAttemptedStep(0);
+    setStep(2);
+  };
+
+  const confirmCustomCategory = async () => {
+    const name = customName.trim();
+    if (!name) {
+      setAttemptedStep(step);
+      return;
+    }
+    setAttemptedStep(0);
+    try {
+      await createCategory.mutateAsync({
+        name,
+        icon: customIcon || "Cooking",
+      });
+    } catch {
+      // Keep going — the habit can still be created with category "Custom".
+    }
+    setCategory("Custom");
+    setCustomSectionOpen(false);
+    setSelectedCustomId(null);
+    if (!activityText.trim()) setActivityText(name);
     setStep(2);
   };
 
@@ -232,9 +355,14 @@ export default function CreateHabitModal({
 
   const goNext = () => {
     setAttemptedStep(step);
-    if (step === 1 && category) {
-      setStep(2);
-      setAttemptedStep(0);
+    if (step === 1) {
+      if (category === "Custom" && customSectionOpen) {
+        void confirmCustomCategory();
+      } else if (category) {
+        setStep(2);
+        setAttemptedStep(0);
+      }
+      // Fall through keeps attemptedStep set so the validation error shows.
     } else if (step === 2 && activityText.trim()) {
       // Echo the user's own activity into the title as a starting point.
       if (!title.trim()) setTitle(activityText.trim());
@@ -252,7 +380,7 @@ export default function CreateHabitModal({
       onSubmit({
         title: title.trim(),
         description: description.trim() || undefined,
-        category: category!,
+        category: category ?? "Uncategorized",
         activity: activityText.trim() || undefined,
         goalLabel: resolvedGoalLabel,
         goalValue: goalValue ?? undefined,
@@ -279,6 +407,11 @@ export default function CreateHabitModal({
 
   const stepTouched = attemptedStep === step;
   const showError = stepTouched && stepError != null;
+
+  const customPending = category === "Custom" && customSectionOpen;
+  const continueDisabled =
+    loading ||
+    (step === 1 && customPending && !customName.trim());
 
   return (
     <div
@@ -310,13 +443,28 @@ export default function CreateHabitModal({
 
         {/* Header */}
         <div className="px-8 pt-8 pb-5">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-[#2563EB]">
-            Create New Habit
-          </p>
-          <h2 className="text-2xl font-bold text-[#0F172A]">
-            {HEADER_QUESTIONS[step - 1]}
-          </h2>
-          <p className="mt-1 text-xs text-[#64748B]">{HEADER_HINTS[step - 1]}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-[#2563EB]">
+                Create New Habit
+              </p>
+              <h2 className="text-2xl font-bold text-[#0F172A]">
+                {HEADER_QUESTIONS[step - 1]}
+              </h2>
+              <p className="mt-1 text-xs text-[#64748B]">{HEADER_HINTS[step - 1]}</p>
+            </div>
+
+            {step === 1 && (
+              <button
+                type="button"
+                onClick={skipCategory}
+                className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#64748B] transition-all duration-200 hover:border-[#2563EB]/40 hover:text-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/30"
+              >
+                Skip
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
 
           {/* Steps indicator */}
           <ol className="mt-4 flex flex-wrap items-center gap-2" aria-label="Create habit progress">
@@ -378,7 +526,8 @@ export default function CreateHabitModal({
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {categories.map((c) => {
                   const Icon = CATEGORY_ICONS[c.category] ?? Sparkles;
-                  const active = category === c.category;
+                  const active =
+                    category === c.category && !customSectionOpen && !selectedCustomId;
                   return (
                     <button
                       key={c.category}
@@ -407,7 +556,144 @@ export default function CreateHabitModal({
                     </button>
                   );
                 })}
+
+                {/* Saved custom categories — appended after built-ins */}
+                {customCategories.map((cc) => {
+                  const active = selectedCustomId === cc.id;
+                  return (
+                    <button
+                      key={`custom-${cc.id}`}
+                      onClick={() => selectSavedCustom(cc)}
+                      aria-pressed={active}
+                      className={cn(
+                        "group flex flex-col items-center gap-2 rounded-2xl border p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/30",
+                        active
+                          ? "border-[#2563EB] bg-[#2563EB]/5 shadow-md shadow-[#2563EB]/10"
+                          : "border-slate-100 bg-white hover:border-[#2563EB]/40 hover:shadow-md hover:shadow-[#2563EB]/5 active:scale-[0.98]"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200",
+                          active
+                            ? "bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/30"
+                            : "bg-[#2563EB]/8 group-hover:bg-[#2563EB]/10"
+                        )}
+                      >
+                        {(() => {
+                          const SavedIcon = renderCustomIcon(cc.icon);
+                          return <SavedIcon className="h-6 w-6" />;
+                        })()}
+                      </div>
+                      <span className="text-sm font-semibold text-[#0F172A]">
+                        {cc.name}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {/* Create a new custom category */}
+                <button
+                  type="button"
+                  onClick={toggleCustom}
+                  aria-pressed={category === "Custom" && customSectionOpen}
+                  className={cn(
+                    "group flex flex-col items-center gap-2 rounded-2xl border border-dashed p-5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/30",
+                    category === "Custom" && customSectionOpen
+                      ? "border-[#2563EB] bg-[#2563EB]/5 shadow-md shadow-[#2563EB]/10"
+                      : "border-slate-200 bg-white hover:border-[#2563EB]/50 hover:shadow-md hover:shadow-[#2563EB]/5 active:scale-[0.98]"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200",
+                      category === "Custom" && customSectionOpen
+                        ? "bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/30"
+                        : "bg-[#2563EB]/8 text-[#2563EB] group-hover:bg-[#2563EB]/10"
+                    )}
+                  >
+                    <Smile className="h-6 w-6" />
+                  </div>
+                  <span className="text-sm font-semibold text-[#0F172A]">
+                    Custom
+                  </span>
+                </button>
               </div>
+
+              {/* Custom category builder — expands inline below the grid */}
+              {customSectionOpen && (
+                <div className="mt-5 rounded-2xl border border-[#2563EB]/20 bg-[#2563EB]/[0.03] p-5 transition-all duration-200">
+                  <p className="text-sm font-semibold text-[#0F172A]">
+                    Create your own category
+                  </p>
+                  <p className="mt-0.5 text-xs text-[#64748B]">
+                    Saved to your account so it appears next time you create a
+                    habit.
+                  </p>
+
+                  <IconSelector
+                    value={customIcon}
+                    onChange={(v) => {
+                      setCustomIcon(v);
+                      setAttemptedStep(0);
+                    }}
+                    options={CUSTOM_ICONS}
+                    columns={4}
+                    label="Pick an icon"
+                    className="mt-4"
+                  />
+
+                  <div className="mt-4">
+                    <label
+                      htmlFor="habit-custom-name"
+                      className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[#64748B]"
+                    >
+                      Category Name *
+                    </label>
+                    <input
+                      id="habit-custom-name"
+                      type="text"
+                      value={customName}
+                      onChange={(e) => {
+                        setCustomName(e.target.value);
+                        setAttemptedStep(0);
+                      }}
+                      maxLength={60}
+                      placeholder="e.g. Cooking, Journaling"
+                      autoComplete="off"
+                      aria-invalid={
+                        (attemptedStep === step && !customName.trim()) || undefined
+                      }
+                      className={cn(
+                        "w-full rounded-xl border bg-white px-4 py-3 text-sm text-[#0F172A] placeholder:text-[#94A3B8] transition-all duration-200 focus:outline-none focus:ring-2",
+                        attemptedStep === step && customName.trim() === ""
+                          ? "border-red-300 focus:border-red-400 focus:ring-red-100"
+                          : "border-slate-200 focus:border-[#2563EB] focus:ring-[#2563EB]/10"
+                      )}
+                    />
+                    {attemptedStep === step && customName.trim() === "" ? (
+                      <p
+                        role="alert"
+                        className="mt-2 text-xs font-medium text-red-500"
+                      >
+                        Name your custom category to continue.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-[#64748B]">
+                        Continue is disabled until you give it a name.
+                      </p>
+                    )}
+                  </div>
+
+                  {createCategory.isPending && (
+                    <p className="mt-3 flex items-center gap-2 text-xs font-medium text-[#2563EB]">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Saving your category…
+                    </p>
+                  )}
+                </div>
+              )}
+
               {showError && (
                 <p
                   role="alert"
@@ -425,12 +711,6 @@ export default function CreateHabitModal({
                 Step 2 — Activity
               </p>
 
-              <label
-                htmlFor="habit-activity"
-                className="mb-2 block text-sm font-semibold text-[#0F172A]"
-              >
-                What would you like to work on?
-              </label>
               <input
                 id="habit-activity"
                 type="text"
@@ -463,8 +743,10 @@ export default function CreateHabitModal({
 
               {activitySuggestions.length > 0 && (
                 <div className="mt-5">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
-                    Suggested — optional
+                  <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-[#64748B]">
+                    <Lightbulb className="h-3.5 w-3.5 shrink-0 text-[#2563EB]" />
+                    Optional shortcuts — tap to autofill, or ignore and type
+                    your own.
                   </p>
                   <SuggestionChips
                     items={activitySuggestions.map((name) => ({
@@ -474,10 +756,6 @@ export default function CreateHabitModal({
                     onPick={pickActivity}
                     selectedKey={activityText.trim().toLowerCase()}
                   />
-                  <p className="mt-2 text-[11px] text-[#94A3B8]">
-                    Suggestions are only starting points. You can type anything
-                    you want.
-                  </p>
                 </div>
               )}
             </div>
@@ -811,7 +1089,7 @@ export default function CreateHabitModal({
           </button>
           <button
             onClick={goNext}
-            disabled={loading}
+            disabled={continueDisabled}
             className="group h-14 flex-1 rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-sm font-semibold text-white transition-all duration-200 hover:shadow-lg hover:shadow-[#2563EB]/25 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 flex items-center justify-center gap-2.5"
           >
             {loading ? (

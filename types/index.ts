@@ -4,6 +4,8 @@ export interface User {
   email: string;
   photoUrl: string | null;
   role?: "user" | "admin";
+  isPremium?: boolean;
+  premiumExpiresAt?: string | Date;
   xp: number;
   level: number;
   totalHabits: number;
@@ -12,6 +14,88 @@ export interface User {
   lastHabitCompletedAt?: string | Date;
   createdAt: string | Date;
   updatedAt: string | Date;
+}
+
+export type PaymentStatus =
+  | "PENDING"
+  | "PAID"
+  | "FAILED"
+  | "EXPIRED"
+  | "CANCELLED";
+
+export type SubscriptionStatus = "ACTIVE" | "EXPIRED" | "CANCELLED";
+
+export type PaymentPlan = "PREMIUM";
+
+export interface PaymentRecord {
+  orderId: string;
+  amount: number;
+  status: PaymentStatus;
+  paymentType: string | null;
+  transactionStatus: string | null;
+  processedAt: string | Date | null;
+  createdAt: string | Date;
+}
+
+export interface CreatePaymentResult {
+  orderId: string;
+  token: string;
+  redirectUrl: string;
+  clientKey: string;
+  amount: number;
+}
+
+export interface PaymentStatusResult {
+  orderId: string;
+  status: PaymentStatus;
+  transactionStatus: string | null;
+  amount: number;
+  processedAt: string | Date | null;
+}
+
+export interface GrowthOverview {
+  consistency: number;
+  habitsCompleted: number;
+  totalHabits: number;
+  currentStreak: number;
+  trend: "improving" | "declining" | "steady" | null;
+  insight: string;
+}
+
+export interface AdminPaymentSummary {
+  totalRevenue: number;
+  premiumUsers: number;
+  activeSubscriptions: number;
+  totalPayments: number;
+  pendingPayments: number;
+  failedPayments: number;
+  paidPayments: number;
+}
+
+export interface AdminPaymentRow {
+  orderId: string;
+  userId: string;
+  amount: number;
+  status: PaymentStatus;
+  paymentType: string | null;
+  transactionStatus: string | null;
+  createdAt: string | Date | null;
+  processedAt: string | Date | null;
+}
+
+export interface AdminPaymentDashboard {
+  summary: AdminPaymentSummary;
+  payments: AdminPaymentRow[];
+}
+
+export interface AdminSubscriptionRow {
+  id: string;
+  userId: string;
+  plan: string;
+  status: SubscriptionStatus;
+  startedAt: string | Date | null;
+  expiredAt: string | Date | null;
+  createdAt: string | Date | null;
 }
 
 export type HabitCategory =
@@ -24,9 +108,17 @@ export type HabitCategory =
   | "Productivity"
   | "Finance"
   | "Language"
-  | "Custom";
+  | "Custom"
+  | "Uncategorized";
 
 export type HabitDifficulty = "Easy" | "Medium" | "Hard";
+
+export interface CustomCategory {
+  id: string;
+  name: string;
+  icon: string;
+  createdAt: string | Date;
+}
 
 export interface Habit {
   id: string;

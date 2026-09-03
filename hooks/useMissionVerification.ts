@@ -24,6 +24,7 @@ const CATEGORY_MESSAGES: Record<HabitCategory, string[]> = {
   Finance: ["Financial discipline confirmed.", "Spending data analyzed.", "Savings verified."],
   Language: ["Language practice verified.", "Vocabulary growth confirmed.", "Language skill analyzed."],
   Custom: ["Custom metrics analyzed.", "Session data verified.", "Progress confirmed."],
+  Uncategorized: ["Session data verified.", "Progress confirmed.", "Activity analyzed."],
 };
 
 const PHASE_LABELS: Record<VerificationPhase, string> = {

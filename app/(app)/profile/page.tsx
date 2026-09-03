@@ -7,6 +7,7 @@ import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usersApi, achievementsApi } from "@/lib/api";
+import { levelSpan, xpIntoLevel, xpRemaining, levelPercent } from "@/lib/xp";
 import type { User, Achievement } from "@/types";
 import {
   User as UserIcon,
@@ -292,11 +293,10 @@ function ProfileContent() {
   }
 
   const achievementCount = achievements.filter((a) => a.unlocked).length;
-  const xpNeeded = profileUser.level * 100;
-  const xpProgress = Math.min(
-    Math.round((profileUser.xp / xpNeeded) * 100),
-    100
-  );
+  const xpNeeded = levelSpan(profileUser.level);
+  const xpInto = xpIntoLevel(profileUser.level, profileUser.xp);
+  const xpLeft = xpRemaining(profileUser.level, profileUser.xp);
+  const xpProgress = levelPercent(profileUser.level, profileUser.xp);
 
   return (
     <div className="flex-1 px-6 py-8">
@@ -382,7 +382,7 @@ function ProfileContent() {
                   Level {profileUser.level}
                 </span>
                 <span className="text-xs text-slate-500">
-                  {profileUser.xp.toLocaleString()} / {xpNeeded.toLocaleString()} XP
+                  {xpInto.toLocaleString()} / {xpNeeded.toLocaleString()} XP
                 </span>
               </div>
               <div
@@ -399,7 +399,7 @@ function ProfileContent() {
                 />
               </div>
               <p className="mt-1.5 text-right text-xs text-slate-400">
-                {xpProgress}% — {xpNeeded - profileUser.xp} XP to Level{" "}
+                {xpProgress}% — {xpLeft} XP to Level{" "}
                 {profileUser.level + 1}
               </p>
             </div>
