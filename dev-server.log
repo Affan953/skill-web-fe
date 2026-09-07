@@ -1,0 +1,16 @@
+
+> skill-fe@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.22.60.47:3000
+- Environments: .env.local
+✓ Ready in 410ms
+
+○ Compiling /dashboard ...
+ GET /dashboard 200 in 6.2s (next.js: 5.9s, application-code: 206ms)
+ GET /login 200 in 1549ms (next.js: 1495ms, application-code: 55ms)
+ GET /dashboard 200 in 63ms (next.js: 3ms, application-code: 60ms)
+✓ Compiled in 111ms
+[?25h
