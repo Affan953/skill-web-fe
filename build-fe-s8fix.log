@@ -1,0 +1,56 @@
+﻿Γû▓ Next.js 16.2.9 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 12.0s
+  Running TypeScript ...
+  Finished TypeScript in 16.4s ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/34) ...
+  Generating static pages using 15 workers (8/34) 
+  Generating static pages using 15 workers (16/34) 
+  Generating static pages using 15 workers (25/34) 
+Γ£ô Generating static pages using 15 workers (34/34) in 723ms
+  Finalizing page optimization ...
+
+Route (app)
+Γöî Γùï /
+Γö£ Γùï /_not-found
+Γö£ Γùï /achievements
+Γö£ Γùï /admin
+Γö£ Γùï /admin/achievements
+Γö£ Γùï /admin/daily-quests
+Γö£ Γùï /admin/habits
+Γö£ Γùï /admin/leaderboard
+Γö£ Γùï /admin/notifications
+Γö£ Γùï /admin/payments
+Γö£ Γùï /admin/profile
+Γö£ Γùï /admin/reflections
+Γö£ Γùï /admin/settings
+Γö£ Γùï /admin/statistics
+Γö£ Γùï /admin/subscriptions
+Γö£ Γùï /admin/users
+Γö£ Γùï /daily-quests
+Γö£ Γùï /dashboard
+Γö£ Γùï /discover
+Γö£ Γùï /feed
+Γö£ ╞Æ /feed/activity/[activityId]
+Γö£ Γùï /growth-journal
+Γö£ Γùï /habits
+Γö£ Γùï /leaderboard
+Γö£ Γùï /login
+Γö£ Γùï /messages
+Γö£ ╞Æ /messages/[conversationId]
+Γö£ Γùï /notifications
+Γö£ Γùï /profile
+Γö£ Γùï /register
+Γö£ Γùï /reviews
+Γö£ Γùï /settings
+Γö£ Γùï /statistics
+Γö£ Γùï /upgrade
+Γöö ╞Æ /users/[username]
+
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+

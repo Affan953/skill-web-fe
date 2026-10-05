@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import PlaceholderCard from "@/components/PlaceholderCard";
+import Avatar from "@/components/Avatar";
+import FollowCountsStats from "@/components/follow/FollowCountsStats";
 import { useFirebaseToken } from "@/hooks/useFirebaseToken";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usersApi, achievementsApi } from "@/lib/api";
+import { usersApi, achievementsApi, habitsApi, getUserFacingError } from "@/lib/api";
 import { levelSpan, xpIntoLevel, xpRemaining, levelPercent } from "@/lib/xp";
-import type { User, Achievement } from "@/types";
+import type { User, Achievement, Habit } from "@/types";
 import {
   User as UserIcon,
   Mail,
@@ -28,8 +31,9 @@ import {
   Palette,
   Info,
   LogOut,
+  Lock,
+  Eye,
 } from "lucide-react";
-import Image from "next/image";
 
 function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "N/A";
@@ -91,39 +95,181 @@ function ErrorState({
   );
 }
 
+const USERNAME_REGEX = /^[a-z0-9._]+$/;
+const USERNAME_CHARS = /[._]/;
+
+type UsernameCheck = {
+  name: string;
+  status: "checking" | "available" | "taken" | "error";
+};
+
 function EditProfileModal({
   user,
+  getToken,
   onClose,
   onSave,
   saving,
 }: {
   user: User;
+  getToken: () => Promise<string | null>;
   onClose: () => void;
-  onSave: (data: { username: string; photoUrl: string }) => Promise<void>;
+  onSave: (data: {
+    username: string;
+    displayName: string;
+    bio: string;
+    photoUrl: string;
+    profileVisibility: "PUBLIC" | "PRIVATE";
+  }) => Promise<void>;
   saving: boolean;
 }) {
   const [username, setUsername] = useState(user.username);
+  const [displayName, setDisplayName] = useState(user.displayName ?? "");
+  const [bio, setBio] = useState(user.bio ?? "");
   const [photoUrl, setPhotoUrl] = useState(user.photoUrl ?? "");
+  const [visibility, setVisibility] = useState<"PUBLIC" | "PRIVATE">(
+    user.profileVisibility ?? "PUBLIC"
+  );
+  const [check, setCheck] = useState<UsernameCheck | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const canSave = username.trim().length >= 3 && !saving;
+  const usernameChanged = username.trim() !== user.username;
+  const name = username.trim();
+  const validLength = name.length >= 3 && name.length <= 30;
+  const validFormat =
+    USERNAME_REGEX.test(name) &&
+    !USERNAME_CHARS.test(name.charAt(0)) &&
+    !USERNAME_CHARS.test(name.charAt(name.length - 1));
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!usernameChanged || !validLength || !validFormat) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      setCheck({ name, status: "checking" });
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const res = await usersApi.checkUsernameAvailability(name, token);
+        if (!cancelled) {
+          setCheck({ name, status: res.available ? "available" : "taken" });
+        }
+      } catch {
+        if (!cancelled) setCheck({ name, status: "error" });
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [name, usernameChanged, validLength, validFormat, getToken]);
+
+  const currentCheck =
+    check && check.name === name ? check.status : null;
+
+  const canSave =
+    !saving &&
+    validLength &&
+    validFormat &&
+    (usernameChanged
+      ? currentCheck !== null &&
+        currentCheck !== "checking" &&
+        currentCheck !== "taken"
+      : true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
-    await onSave({ username: username.trim(), photoUrl: photoUrl.trim() });
+    setErrorMsg(null);
+    try {
+      await onSave({
+        username: name,
+        displayName: displayName.trim(),
+        bio: bio.trim(),
+        photoUrl: photoUrl.trim(),
+        profileVisibility: visibility,
+      });
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
+    }
   };
+
+  let hint: { tone: "red" | "slate" | "emerald"; text: string } | null = null;
+  if (usernameChanged) {
+    if (name.length > 0 && name.length < 3) {
+      hint = { tone: "red", text: "Username must be at least 3 characters." };
+    } else if (name.length > 30) {
+      hint = {
+        tone: "red",
+        text: "Username must be 30 characters or fewer.",
+      };
+    } else if (name.length > 0 && !USERNAME_REGEX.test(name)) {
+      hint = {
+        tone: "red",
+        text: "Use only lowercase letters, numbers, underscores or dots.",
+      };
+    } else if (
+      USERNAME_CHARS.test(name.charAt(0)) ||
+      USERNAME_CHARS.test(name.charAt(name.length - 1))
+    ) {
+      hint = {
+        tone: "red",
+        text: "Username cannot start or end with a dot or underscore.",
+      };
+    } else if (currentCheck === "checking") {
+      hint = { tone: "slate", text: "Checking availability\u2026" };
+    } else if (currentCheck === "taken") {
+      hint = { tone: "red", text: "That username is already taken." };
+    } else if (currentCheck === "available") {
+      hint = {
+        tone: "emerald",
+        text: "That username is available!",
+      };
+    } else if (currentCheck === "error") {
+      hint = {
+        tone: "slate",
+        text: "Couldn\u2019t check availability right now. You can still try saving.",
+      };
+    }
+  }
+
+  const hintColor =
+    hint?.tone === "red"
+      ? "text-red-400"
+      : hint?.tone === "emerald"
+        ? "text-emerald-500"
+        : "text-slate-400";
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-profile-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900">Edit Profile</h2>
+          <h2
+            id="edit-profile-title"
+            className="text-lg font-bold text-slate-900"
+          >
+            Edit Profile
+          </h2>
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
@@ -133,23 +279,26 @@ function EditProfileModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errorMsg && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {errorMsg}
+            </div>
+          )}
+
           {/* Avatar preview */}
           <div className="flex justify-center">
             <div className="relative">
-              {photoUrl ? (
-                <Image
-                  src={photoUrl}
-                  alt="Preview"
-                  width={80}
-                  height={80}
-                  className="h-20 w-20 rounded-full object-cover ring-2 ring-slate-200"
-                  unoptimized
-                />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#2563EB] text-2xl font-bold text-white">
-                  {username.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <Avatar
+                name={displayName || username}
+                src={photoUrl}
+                size={80}
+                alt="Profile picture preview"
+                className="h-20 w-20 ring-2 ring-slate-200"
+              />
               <div className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-slate-100">
                 <Camera className="h-3 w-3 text-slate-500" />
               </div>
@@ -166,15 +315,43 @@ function EditProfileModal({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               minLength={3}
+              maxLength={30}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
+              placeholder="e.g. affan_dev"
+            />
+            {hint && (
+              <p className={`mt-1 text-[10px] ${hintColor}`}>{hint.text}</p>
+            )}
+          </div>
+
+          {/* Display name */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Display Name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
               maxLength={50}
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
-              placeholder="Enter username"
+              placeholder="Your full name or nickname"
             />
-            {username.trim().length > 0 && username.trim().length < 3 && (
-              <p className="mt-1 text-[10px] text-red-400">
-                Username must be at least 3 characters
-              </p>
-            )}
+          </div>
+
+          {/* Bio */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Bio
+            </label>
+            <textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              maxLength={160}
+              rows={3}
+              className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
+              placeholder="Tell others what you're building…"
+            />
           </div>
 
           {/* Photo URL */}
@@ -192,6 +369,47 @@ function EditProfileModal({
             <p className="mt-1 text-[10px] text-slate-400">
               Paste a URL to your profile picture
             </p>
+          </div>
+
+          {/* Profile visibility */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Profile Visibility
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setVisibility("PUBLIC")}
+                className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  visibility === "PUBLIC"
+                    ? "border-[#2563EB] bg-[#2563EB]/10"
+                    : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                }`}
+              >
+                <span className="text-sm font-semibold text-slate-900">
+                  Public
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  Everyone can see your growth &amp; achievements
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibility("PRIVATE")}
+                className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  visibility === "PRIVATE"
+                    ? "border-[#2563EB] bg-[#2563EB]/10"
+                    : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                }`}
+              >
+                <span className="text-sm font-semibold text-slate-900">
+                  Private
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  Only you see stats; others see a masked profile
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Actions */}
@@ -256,24 +474,50 @@ function ProfileContent() {
     enabled: !!getToken,
   });
 
+  const { data: habits = [] } = useQuery<Habit[], Error>({
+    queryKey: ["habits"],
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token) throw new Error("Not authenticated");
+      return habitsApi.getAll(token);
+    },
+    enabled: !!getToken && !!authUser,
+  });
+
   const [showEdit, setShowEdit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
 
   const handleSave = useCallback(
-    async (data: { username: string; photoUrl: string }) => {
+    async (data: {
+      username: string;
+      displayName: string;
+      bio: string;
+      photoUrl: string;
+      profileVisibility: "PUBLIC" | "PRIVATE";
+    }) => {
       const token = await getToken();
       if (!token) return;
       setSaving(true);
       try {
         await usersApi.updateProfile(token, {
           username: data.username,
+          displayName: data.displayName || undefined,
+          bio: data.bio,
           photoUrl: data.photoUrl || undefined,
+          profileVisibility: data.profileVisibility,
         });
         await refreshUser();
-        await queryClient.invalidateQueries({ queryKey: ["profile", "me"] });
+        await queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+        await queryClient.invalidateQueries({ queryKey: ["profile"] });
+        await queryClient.invalidateQueries({
+          queryKey: ["user-profile"],
+        });
         setShowEdit(false);
+        setSavedFlash(true);
+        window.setTimeout(() => setSavedFlash(false), 4000);
       } catch (err) {
-        console.error("Failed to update profile:", err);
+        throw new Error(getUserFacingError(err));
       } finally {
         setSaving(false);
       }
@@ -286,7 +530,7 @@ function ProfileContent() {
   if (isError || !profileUser) {
     return (
       <ErrorState
-        message={error?.message ?? "Failed to load profile"}
+        message={getUserFacingError(error)}
         onRetry={() => refetch()}
       />
     );
@@ -300,26 +544,29 @@ function ProfileContent() {
 
   return (
     <div className="flex-1 px-6 py-8">
+      {savedFlash && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-6 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          Profile updated successfully.
+        </div>
+      )}
       {/* Profile Header */}
           <section className="mb-8">
             <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-8 shadow-lg">
               <div className="flex flex-col items-center gap-6 sm:flex-row">
                 {/* Avatar */}
                 <div className="relative flex-shrink-0">
-                  {profileUser.photoUrl ? (
-                    <Image
-                      src={profileUser.photoUrl}
-                      alt={profileUser.username}
-                      width={96}
-                      height={96}
-                      className="h-24 w-24 rounded-full object-cover ring-4 ring-[#2563EB]/30"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#2563EB] to-[#60A5FA] text-3xl font-bold text-white ring-4 ring-[#2563EB]/30">
-                      {profileUser.username.charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <Avatar
+                    name={profileUser.displayName || profileUser.username}
+                    src={profileUser.photoUrl}
+                    size={96}
+                    alt={profileUser.username}
+                    className="h-24 w-24 ring-4 ring-[#2563EB]/30"
+                  />
                   <div className="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#1E293B] bg-[#2563EB]">
                     <span className="text-[10px] font-bold text-white">
                       {profileUser.level}
@@ -329,13 +576,23 @@ function ProfileContent() {
 
                 {/* Info */}
                 <div className="flex-1 text-center sm:text-left">
-                  <h1 className="text-2xl font-bold text-slate-900">
-                    {profileUser.username}
-                  </h1>
-                  <div className="mt-1 flex items-center justify-center gap-2 text-sm text-slate-500 sm:justify-start">
-                    <Mail className="h-4 w-4" />
-                    {firebaseUser?.email ?? profileUser.email}
+                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center">
+                    <h1 className="text-2xl font-bold text-slate-900">
+                      {profileUser.displayName || profileUser.username}
+                    </h1>
+                    {profileUser.profileVisibility === "PRIVATE" && (
+                      <span className="flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                        <Lock className="h-3 w-3" />
+                        Private
+                      </span>
+                    )}
                   </div>
+                  <p className="mt-1 text-sm text-slate-500">@{profileUser.username}</p>
+                  {profileUser.bio && (
+                    <p className="mt-2 max-w-md text-sm text-slate-600">
+                      {profileUser.bio}
+                    </p>
+                  )}
                   <div className="mt-1 flex items-center justify-center gap-2 text-xs text-slate-400 sm:justify-start">
                     <Calendar className="h-3.5 w-3.5" />
                     Member since {formatDate(profileUser.createdAt)}
@@ -360,16 +617,28 @@ function ProfileContent() {
                       </span>
                     </div>
                   </div>
+                  <div className="mt-2">
+                    <FollowCountsStats userId={profileUser.uid} />
+                  </div>
                 </div>
 
                 {/* Edit button */}
-                <button
-                  onClick={() => setShowEdit(true)}
-                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:border-[#2563EB]/50 hover:text-slate-900"
-                >
-                  <Edit3 className="h-4 w-4" />
-                  Edit Profile
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setShowEdit(true)}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:border-[#2563EB]/50 hover:text-slate-900"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    Edit Profile
+                  </button>
+                  <Link
+                    href={`/users/${profileUser.username}`}
+                    className="flex items-center gap-2 justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:border-[#2563EB]/50 hover:text-slate-900"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View Public
+                  </Link>
+                </div>
               </div>
             </div>
           </section>
@@ -435,7 +704,7 @@ function ProfileContent() {
               />
               <PlaceholderCard
                 title="Total Habits"
-                value={profileUser.totalHabits}
+                value={habits.length}
                 description="Habits being tracked"
                 icon={<CheckCircle2 className="h-5 w-5" />}
               />
@@ -467,9 +736,44 @@ function ProfileContent() {
                       <UserIcon className="h-4 w-4 text-[#2563EB]" />
                     </div>
                     <div>
+                      <p className="text-xs text-slate-500">Display Name</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {profileUser.displayName || profileUser.username}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-b border-slate-200 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2563EB]/10">
+                      <UserIcon className="h-4 w-4 text-[#2563EB]" />
+                    </div>
+                    <div>
                       <p className="text-xs text-slate-500">Username</p>
                       <p className="text-sm font-medium text-slate-900">
-                        {profileUser.username}
+                        @{profileUser.username}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-b border-slate-200 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2563EB]/10">
+                      <Lock className="h-4 w-4 text-[#2563EB]" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Profile Visibility</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {profileUser.profileVisibility === "PRIVATE"
+                          ? "Private"
+                          : "Public"}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {profileUser.profileVisibility === "PRIVATE"
+                          ? "Only you can see your growth stats"
+                          : "Anyone on SkillUp can view your growth profile"}
                       </p>
                     </div>
                   </div>
@@ -493,13 +797,16 @@ function ProfileContent() {
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2563EB]/10">
                       <span className="text-xs font-bold text-[#2563EB]">
-                        ID
+                        @
                       </span>
                     </div>
-                    <div>
-                      <p className="text-xs text-slate-500">User ID</p>
-                      <p className="font-mono text-xs text-slate-500">
-                        {profileUser.uid}
+                    <div className="min-w-0">
+                      {/* Phase 36: the Firebase uid is internal and is no longer
+                          rendered here. The username is the handle that other
+                          people use to find you. */}
+                      <p className="text-xs text-slate-500">Username</p>
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        @{profileUser.username}
                       </p>
                     </div>
                   </div>
@@ -608,6 +915,7 @@ function ProfileContent() {
       {showEdit && (
         <EditProfileModal
           user={profileUser}
+          getToken={getToken}
           onClose={() => setShowEdit(false)}
           onSave={handleSave}
           saving={saving}

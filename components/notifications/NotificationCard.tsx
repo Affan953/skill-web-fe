@@ -10,14 +10,32 @@ import {
   AlertCircle,
   Trash2,
   BookOpen,
+  UserPlus,
+  Heart,
+  MessageCircle,
+  MessageSquare,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { Notification, NotificationType } from "@/types";
 import { cn } from "@/lib/cn";
+import { timeAgo } from "@/lib/timeAgo";
 
 const TYPE_CONFIG: Record<
   NotificationType,
   { icon: React.ComponentType<{ className?: string }>; color: string; bg: string }
 > = {
+  FOLLOW: { icon: UserPlus, color: "text-[#2563EB]", bg: "bg-[#2563EB]/10" },
+  REACTION: { icon: Heart, color: "text-rose-500", bg: "bg-rose-50" },
+  COMMENT: {
+    icon: MessageCircle,
+    color: "text-cyan-600",
+    bg: "bg-cyan-50",
+  },
+  MESSAGE: {
+    icon: MessageSquare,
+    color: "text-[#2563EB]",
+    bg: "bg-[#2563EB]/10",
+  },
   HABIT_REMINDER: { icon: Bell, color: "text-blue-500", bg: "bg-blue-50" },
   HABIT_COMPLETED: {
     icon: CheckCircle2,
@@ -63,19 +81,33 @@ const TYPE_CONFIG: Record<
   SYSTEM: { icon: AlertCircle, color: "text-slate-500", bg: "bg-slate-50" },
 };
 
-function formatTimestamp(date: string | Date): string {
-  const d = new Date(date);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
+/**
+ * Where a notification takes you. Built from a fixed allowlist of route
+ * templates — the id is always encoded into a path segment, never interpolated
+ * as a raw URL, so a hostile stored value cannot become a `javascript:` target.
+ * Returns null when there is nothing meaningful to open, which makes the row
+ * non-navigable instead of guessing.
+ */
+export function notificationHref(
+  notification: Notification
+): string | null {
+  const { entityType, entityId, actor } = notification;
 
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (entityType === "GROWTH_ACTIVITY" && entityId) {
+    return `/feed/activity/${encodeURIComponent(entityId)}`;
+  }
+  if (entityType === "CONVERSATION" && entityId) {
+    return `/messages/${encodeURIComponent(entityId)}`;
+  }
+  if (entityType === "USER" && entityId) {
+    // Prefer the actor's handle so the link is stable and human-readable.
+    const handle = actor?.username ?? entityId;
+    return `/users/${encodeURIComponent(handle)}`;
+  }
+  if (entityType === "ACHIEVEMENT") return "/achievements";
+  if (entityType === "DAILY_QUEST") return "/daily-quests";
+
+  return null;
 }
 
 interface NotificationCardProps {
@@ -91,13 +123,23 @@ export default function NotificationCard({
   onDelete,
   isDeleting,
 }: NotificationCardProps) {
+  const router = useRouter();
   const config = TYPE_CONFIG[notification.type] ?? TYPE_CONFIG.SYSTEM;
   const Icon = config.icon;
+  const href = notificationHref(notification);
+  const actorName = notification.actor?.displayName;
+
+  const handleOpen = () => {
+    // Marking read on open is the expected inbox behaviour, and it is safe to
+    // fire before navigating because the mutation is optimistic.
+    if (!notification.isRead) onMarkRead(notification.id);
+    if (href) router.push(href);
+  };
 
   return (
     <div
       className={cn(
-        "group flex items-start gap-4 rounded-xl border p-4 transition-all",
+        "group relative flex items-start gap-4 rounded-xl border p-4 transition-all",
         !notification.isRead
           ? "border-[#2563EB]/30 bg-[#2563EB]/5"
           : "border-slate-200 bg-white hover:bg-slate-50"
@@ -121,7 +163,16 @@ export default function NotificationCard({
                 !notification.isRead ? "text-slate-900" : "text-slate-700"
               )}
             >
-              {notification.title}
+              {actorName ? (
+                <>
+                  <span className="font-semibold">{actorName}</span>{" "}
+                  <span className="font-normal text-slate-600">
+                    {notification.title.toLowerCase()}
+                  </span>
+                </>
+              ) : (
+                notification.title
+              )}
             </p>
             <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">
               {notification.description}
@@ -130,15 +181,21 @@ export default function NotificationCard({
 
           <div className="flex items-center gap-2">
             {!notification.isRead && (
-              <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#2563EB]" />
+              <>
+                <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#2563EB]" />
+                <span className="sr-only">Unread</span>
+              </>
             )}
-            <span className="flex-shrink-0 text-[10px] text-slate-400" suppressHydrationWarning>
-              {formatTimestamp(notification.createdAt)}
+            <span
+              className="flex-shrink-0 text-[10px] text-slate-400"
+              suppressHydrationWarning
+            >
+              {timeAgo(notification.createdAt) ?? ""}
             </span>
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-2">
+        <div className="relative z-10 mt-2 flex items-center gap-2">
           {!notification.isRead && (
             <button
               onClick={() => onMarkRead(notification.id)}
@@ -157,6 +214,24 @@ export default function NotificationCard({
           </button>
         </div>
       </div>
+
+      {href && (
+        <button
+          onClick={handleOpen}
+          className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2"
+          aria-label={
+            actorName
+              ? `Open notification from ${actorName}`
+              : "Open notification"
+          }
+        >
+          <span className="sr-only">
+            {actorName
+              ? `${actorName} ${notification.title}. Open ${href}`
+              : `${notification.title}. Open ${href}`}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

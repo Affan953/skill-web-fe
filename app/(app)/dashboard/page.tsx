@@ -132,7 +132,7 @@ function DashboardContent() {
   }
 
   const displayName =
-    user?.username || firebaseUser?.displayName || "Adventurer";
+    user?.displayName || user?.username || firebaseUser?.displayName || "Adventurer";
   const level = user?.level ?? 1;
   const xp = user?.xp ?? 0;
   const streak = user?.currentStreak ?? 0;

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import SidebarSection from "@/components/layout/SidebarSection";
 import SidebarNavItem from "@/components/layout/SidebarNavItem";
+import { useInboxUnreadCount } from "@/hooks/useConversations";
 import {
   navigationConfig,
   sidebarSectionOrder,
@@ -16,11 +17,16 @@ interface SidebarNavigationProps {
   onNavigate?: () => void;
 }
 
+/**
+ * A section item is active on its own route and on anything nested under it, so
+ * "Messages" stays lit while a conversation is open — the same rule the admin
+ * config already relied on.
+ */
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.href === "/admin") return pathname === "/admin";
   if (item.href === "/dashboard") return pathname === "/dashboard";
   if (pathname === item.href) return true;
-  if (item.href.startsWith("/admin/") && pathname.startsWith(item.href)) {
+  if (pathname.startsWith(`${item.href}/`)) {
     return true;
   }
   return false;
@@ -33,6 +39,16 @@ export default function SidebarNavigation({
 }: SidebarNavigationProps) {
   const pathname = usePathname();
   const config = navigationConfig[role];
+
+  /**
+   * The unread badge reads the conversation cache the messages pages already
+   * populate, so the number costs no request of its own — and it is only
+   * subscribed on a messages route, where that cache is being refreshed anyway.
+   * Elsewhere the item shows no count rather than one that quietly went stale.
+   */
+  const unreadMessages = useInboxUnreadCount({
+    enabled: role === "user" && (pathname?.startsWith("/messages") ?? false),
+  });
 
   return (
     <nav
@@ -54,6 +70,11 @@ export default function SidebarNavigation({
                     item={item}
                     collapsed={collapsed}
                     active={isActive(pathname, item)}
+                    badge={
+                      role === "user" && item.href === "/messages"
+                        ? unreadMessages
+                        : undefined
+                    }
                     onNavigate={onNavigate}
                   />
                 ))}

@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { LogOut, Menu } from "lucide-react";
+import { LogOut, Menu, MessageSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserQuery } from "@/hooks/useUserQuery";
 import NotificationBadge from "@/components/notifications/NotificationBadge";
+import Avatar from "@/components/Avatar";
 
 interface TopNavbarProps {
   onMenuToggle?: () => void;
@@ -16,7 +16,7 @@ export default function TopNavbar({ onMenuToggle }: TopNavbarProps) {
   const { user } = useUserQuery();
 
   const displayName =
-    user?.username || firebaseUser?.displayName || "Adventurer";
+    user?.displayName || user?.username || firebaseUser?.displayName || "Adventurer";
   const displayLevel = user?.level ?? 1;
 
   return (
@@ -36,6 +36,19 @@ export default function TopNavbar({ onMenuToggle }: TopNavbarProps) {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Messages lives here next to notifications because on mobile the
+            sidebar is behind the hamburger, and DMs are a frequent destination.
+            No unread badge: the total would need an aggregate count the Phase 32
+            endpoints deliberately do not provide, and a wrong number is worse
+            than none. Each conversation row shows its own count. */}
+        <Link
+          href="/messages"
+          title="Messages"
+          aria-label="Messages"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100"
+        >
+          <MessageSquare className="h-5 w-5" />
+        </Link>
         <NotificationBadge />
         <div className="flex items-center gap-3">
           <Link
@@ -43,21 +56,14 @@ export default function TopNavbar({ onMenuToggle }: TopNavbarProps) {
             className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-slate-100/80 cursor-pointer"
             title="View Profile"
           >
-            {user?.photoUrl ? (
-              <Image
-                src={user.photoUrl}
-                alt={displayName}
-                width={32}
-                height={32}
-                loading="eager"
-                priority
-                className="h-8 w-8 rounded-full object-cover ring-2 ring-slate-200"
-              />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2563EB] text-xs font-semibold text-white">
-                {displayName.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <Avatar
+              name={displayName}
+              src={user?.photoUrl}
+              size={32}
+              alt={displayName}
+              priority
+              className="h-8 w-8 ring-2 ring-slate-200"
+            />
             <div className="hidden sm:block text-left">
               <p className="text-sm font-medium text-slate-900">{displayName}</p>
               <p className="text-xs text-slate-500">Level {displayLevel}</p>

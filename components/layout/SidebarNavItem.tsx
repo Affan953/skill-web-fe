@@ -9,6 +9,13 @@ interface SidebarNavItemProps {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  /**
+   * Optional count rendered at the trailing edge, e.g. unread messages.
+   *
+   * Only shown when there is something to say: a `0` pill is noise, and an
+   * active dot is then used instead.
+   */
+  badge?: number;
   onNavigate?: () => void;
 }
 
@@ -21,11 +28,14 @@ export default function SidebarNavItem({
   item,
   collapsed,
   active,
+  badge,
   onNavigate,
 }: SidebarNavItemProps) {
   const Icon = item.icon;
   const [tooltip, setTooltip] = useState<TooltipPosition | null>(null);
   const tooltipId = `sidebar-tooltip-${item.href.replace(/[^a-zA-Z0-9-]/g, "-")}`;
+
+  const hasBadge = typeof badge === "number" && badge > 0;
 
   function showTooltip(event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) {
     if (!collapsed) return;
@@ -84,11 +94,22 @@ export default function SidebarNavItem({
           {item.label}
         </span>
 
-        {active && !collapsed && (
+        {hasBadge && !collapsed ? (
           <span
-            className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#2563EB]"
-            aria-hidden="true"
-          />
+            data-testid={`nav-badge${item.href.replace(/[^a-zA-Z0-9]/g, "-")}`}
+            className="ml-auto inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-[#2563EB] px-1.5 text-[11px] font-semibold tabular-nums text-white"
+            aria-label={`${badge} unread ${badge === 1 ? "message" : "messages"}`}
+          >
+            <span aria-hidden="true">{badge > 99 ? "99+" : badge}</span>
+          </span>
+        ) : (
+          active &&
+          !collapsed && (
+            <span
+              className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#2563EB]"
+              aria-hidden="true"
+            />
+          )
         )}
       </Link>
 

@@ -18,6 +18,10 @@ import {
   Sparkles,
   CreditCard,
   ShieldCheck,
+  Compass,
+  Rss,
+  MessageSquare,
+  UsersRound,
 } from "lucide-react";
 
 export type SidebarRole = "user" | "admin";
@@ -53,6 +57,10 @@ export const navigationConfig: Record<SidebarRole, RoleNavigationConfig> = {
         { label: "Growth Journal", href: "/growth-journal", icon: NotebookPen },
         { label: "Achievements", href: "/achievements", icon: Award },
         { label: "Daily Quests", href: "/daily-quests", icon: CalendarCheck },
+        { label: "Discover", href: "/discover", icon: Compass },
+        { label: "Growth Feed", href: "/feed", icon: Rss },
+        { label: "Circles", href: "/circles", icon: UsersRound },
+        { label: "Messages", href: "/messages", icon: MessageSquare },
       ],
     },
     insights: {

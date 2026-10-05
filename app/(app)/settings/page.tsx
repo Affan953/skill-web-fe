@@ -14,7 +14,9 @@ import {
   User,
   Sparkles,
   CreditCard,
+  ShieldCheck,
 } from "lucide-react";
+import BlockedUsersPanel from "@/components/safety/BlockedUsersPanel";
 
 function PaymentHistory() {
   const { data, isLoading } = usePaymentHistory();
@@ -201,6 +203,16 @@ function SettingsContent() {
 
             <section className="rounded-xl border border-slate-200 bg-white p-6">
               <div className="mb-4 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-[#2563EB]" />
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Privacy &amp; Safety
+                </h3>
+              </div>
+              <BlockedUsersPanel />
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="mb-4 flex items-center gap-2">
                 <CreditCard className="h-5 w-5 text-[#2563EB]" />
                 <h3 className="text-sm font-semibold text-slate-900">
                   Billing & Subscription
@@ -254,10 +266,13 @@ function SettingsContent() {
                 </h3>
               </div>
               <div className="space-y-3">
+                {/* Phase 36: the Firebase uid is an internal identifier and is
+                    no longer shown here. Your username is the handle other
+                    people use to find you, and it is shown above. */}
                 <div className="flex items-center justify-between py-2 border-b border-slate-200">
-                  <span className="text-sm text-slate-500">UID</span>
-                  <span className="font-mono text-xs text-slate-500">
-                    {user?.uid || "N/A"}
+                  <span className="text-sm text-slate-500">Username</span>
+                  <span className="text-xs text-slate-500">
+                    @{user?.username || "N/A"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-slate-200">

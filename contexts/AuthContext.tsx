@@ -44,30 +44,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const verifiedUidRef = useRef<string | null>(null);
   const fetchingRef = useRef(false);
+  const registeringRef = useRef(false);
 
-  const fetchAndSetUser = useCallback(async (fbUser: FirebaseUser) => {
-    if (verifiedUidRef.current === fbUser.uid && fetchingRef.current) return;
-    fetchingRef.current = true;
-    try {
-      const token = await fbUser.getIdToken();
-      const userData = await authApi.verify(token);
-      setUser(userData);
-      verifiedUidRef.current = fbUser.uid;
-    } catch (error) {
-      // Keep the current user session. A transient backend failure (network,
-      // rate-limit, etc.) should NOT log the user out — the Firebase session
-      // is still valid. Only an explicit logout clears the user.
-      console.error("Failed to refresh user from backend:", error);
-    } finally {
-      fetchingRef.current = false;
-    }
-  }, []);
+  // `forceTokenRefresh` re-mints the ID token. Needed on registration: the
+  // token created by createUserWithEmailAndPassword predates displayName, so
+  // its `name` claim is empty and the backend would fall back to the email
+  // local-part when provisioning the profile.
+  const fetchAndSetUser = useCallback(
+    async (fbUser: FirebaseUser, forceTokenRefresh = false) => {
+      if (verifiedUidRef.current === fbUser.uid && fetchingRef.current) return;
+      fetchingRef.current = true;
+      try {
+        const token = await fbUser.getIdToken(forceTokenRefresh);
+        const userData = await authApi.verify(token);
+        setUser(userData);
+        verifiedUidRef.current = fbUser.uid;
+      } catch (error) {
+        // Keep the current user session. A transient backend failure (network,
+        // rate-limit, etc.) should NOT log the user out — the Firebase session
+        // is still valid. Only an explicit logout clears the user.
+        console.error("Failed to refresh user from backend:", error);
+      } finally {
+        fetchingRef.current = false;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (fbUser) {
-        await fetchAndSetUser(fbUser);
+        // Signing up also fires this listener, immediately and with the same
+        // stale token. Verifying here would race register()'s own call and let
+        // whichever request lands first provision the profile — so
+        // registration owns this first sync.
+        if (!registeringRef.current) {
+          await fetchAndSetUser(fbUser);
+        }
       } else {
         setUser(null);
         queryClient.clear();
@@ -100,13 +114,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string, username: string) => {
       setUser(null);
       queryClient.clear();
-      const credential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-      await updateProfile(credential.user, { displayName: username });
-      await fetchAndSetUser(credential.user);
+      // Set before creating the account so the onAuthStateChanged listener
+      // stands down; cleared in `finally` so a failed signup can still sync.
+      registeringRef.current = true;
+      try {
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+        await updateProfile(credential.user, { displayName: username });
+        await fetchAndSetUser(credential.user, true);
+      } finally {
+        registeringRef.current = false;
+      }
     },
     [fetchAndSetUser, queryClient]
   );

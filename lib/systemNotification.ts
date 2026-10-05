@@ -17,6 +17,7 @@ import {
   Feather,
   CheckCircle2,
   Trophy,
+  Link2,
 } from "lucide-react";
 
 export type SystemNotificationType =
@@ -31,7 +32,8 @@ export type SystemNotificationType =
   | "CATEGORY_IMPROVED"
   | "NEW_TITLE"
   | "WEEKLY_REVIEW"
-  | "MONTHLY_REPORT";
+  | "MONTHLY_REPORT"
+  | "LINK_COPIED";
 
 export type NotificationPriority = "low" | "normal" | "high";
 
@@ -81,6 +83,7 @@ export const NOTIFICATION_TYPE_ICONS: Record<string, LucideIcon> = {
   NEW_TITLE: Trophy,
   WEEKLY_REVIEW: CheckCircle2,
   MONTHLY_REPORT: CheckCircle2,
+  LINK_COPIED: Link2,
 };
 
 export const DEFAULT_NOTIFICATION_ICON: LucideIcon = ShieldCheck;

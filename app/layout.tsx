@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Providers from "@/components/Providers";
 import SystemNotificationProvider from "@/components/system/SystemNotificationProvider";
+import { MessagingSocketProvider } from "@/contexts/MessagingSocketContext";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -59,7 +60,12 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-sans" suppressHydrationWarning>
         <Providers>
           <SystemNotificationProvider>
-            <AuthProvider>{children}</AuthProvider>
+            {/* Inside AuthProvider: the socket handshake needs the Firebase
+                session, and outside nothing else would guarantee it. Outside
+                Providers: it writes into the React Query cache. */}
+            <AuthProvider>
+              <MessagingSocketProvider>{children}</MessagingSocketProvider>
+            </AuthProvider>
           </SystemNotificationProvider>
         </Providers>
       </body>

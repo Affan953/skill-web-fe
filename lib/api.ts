@@ -1,5 +1,9 @@
 import type {
   User,
+  PublicProfile,
+  SearchUserResult,
+  UsernameAvailability,
+  UpdateProfileData,
   Habit,
   CustomCategory,
   Achievement,
@@ -8,6 +12,18 @@ import type {
   HabitCategory,
   HabitDifficulty,
   Notification,
+  NotificationPage,
+  Conversation,
+  ConversationPage,
+  Message,
+  MessagePage,
+  CircleListResult,
+  CircleMemberListResult,
+  CircleMembershipResult,
+  CircleRole,
+  CreateCircleInput,
+  GrowthCircle,
+  UpdateCircleInput,
   AdminStats,
   AdminUserRow,
   AdminHabitRow,
@@ -30,6 +46,22 @@ import type {
   GrowthOverview,
   AdminPaymentDashboard,
   AdminSubscriptionRow,
+  FollowStatusResult,
+  FollowCountsResult,
+  FollowListResult,
+  FollowActionResult,
+  GrowthFeedResult,
+  GrowthActivityDetail,
+  ActivityComment,
+  CommentListResult,
+  ReactionType,
+  ReactionMapResult,
+  ReactionRemoveResult,
+  BlockResponse,
+  BlockedUsersListResult,
+  MyReport,
+  MyReportsListResult,
+  CreateReportInput,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -42,6 +74,94 @@ class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+export function getUserFacingError(error: unknown): string {
+  if (error instanceof ApiError) {
+    switch (error.message) {
+      case "USERNAME_TAKEN":
+        return "That username is already taken. Try another one.";
+      case "INVALID_USERNAME":
+        return "That username isn\u2019t valid. Use 3\u201330 lowercase letters, numbers, underscores or dots.";
+      case "INVALID_PROFILE_DATA":
+        return "Some profile details couldn\u2019t be saved. Please check the fields and try again.";
+      case "PROFILE_NOT_FOUND":
+        return "This profile could not be found. It may have been removed.";
+      case "SELF_FOLLOW_NOT_ALLOWED":
+        return "You can\u2019t follow yourself.";
+      case "USER_NOT_FOUND":
+        return "This person could not be found. They may have been removed.";
+      case "ALREADY_FOLLOWING":
+        return "You\u2019re already following this person.";
+      case "NOT_FOLLOWING":
+        return "You\u2019re not following this person.";
+      case "ACTIVITY_NOT_FOUND":
+        return "This activity could not be found. It may have been removed.";
+      case "INVALID_REACTION_TYPE":
+        return "That reaction isn\u2019t valid.";
+      case "NO_REACTION":
+        return "You haven\u2019t reacted to this activity.";
+      case "COMMENT_EMPTY":
+        return "Write something before posting your comment.";
+      case "COMMENT_TOO_LONG":
+        return "Comments can be at most 500 characters.";
+      case "COMMENT_NOT_FOUND":
+        return "This comment could not be found. It may have been deleted.";
+      case "NOTIFICATION_NOT_FOUND":
+        return "This notification could not be found. It may have been deleted.";
+      // ── Phase 32 direct messaging ──
+      case "CONVERSATION_NOT_FOUND":
+        return "This conversation could not be found.";
+      case "CANNOT_MESSAGE_SELF":
+        return "You can't start a conversation with yourself.";
+      case "INVALID_MESSAGE":
+        return "Please write a message before sending.";
+      case "MESSAGE_TOO_LONG":
+        return "That message is too long. Please shorten it a little.";
+      // ── Phase 35 social safety ──
+      //
+      // USER_BLOCKED deliberately has no wording that distinguishes the two
+      // sides. The backend returns the same code whether the viewer blocked the
+      // target or was blocked by them, and the copy must not reintroduce the
+      // distinction the status code was designed to remove.
+      case "USER_BLOCKED":
+        return "You can’t do that while a block is in place.";
+      case "INVALID_BLOCK_TARGET":
+        return "That person couldn’t be identified. Please try again.";
+      case "BLOCK_SELF_NOT_ALLOWED":
+        return "You can’t block yourself.";
+      case "USER_BLOCK_NOT_FOUND":
+        return "That block couldn’t be found. It may already be lifted.";
+      case "INVALID_REPORT_TARGET":
+        return "That person couldn’t be identified. Please try again.";
+      case "REPORT_SELF_NOT_ALLOWED":
+        return "You can’t report yourself.";
+      case "REPORT_DESCRIPTION_REQUIRED":
+        return "Please describe what happened before submitting.";
+      case "REPORT_ALREADY_EXISTS":
+        return "You’ve already reported this person for that reason.";
+      case "CIRCLE_NOT_JOINABLE":
+        return "This circle can’t be joined.";
+      default:
+        break;
+    }
+    if (error.status === 401 || error.status === 403) {
+      return "Your session has expired. Please sign in again.";
+    }
+    if (error.status === 404) {
+      return "This profile could not be found. It may have been removed.";
+    }
+  }
+  if (error instanceof Error && error.message === "Not authenticated") {
+    return "Your session has expired. Please sign in again.";
+  }
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error && /failed to fetch|network/i.test(error.message))
+  ) {
+    return "Network error. Please check your connection and try again.";
+  }
+  return "Something went wrong. Please try again.";
 }
 
 async function apiRequest<T>(
@@ -76,6 +196,37 @@ async function apiRequest<T>(
   return response.json();
 }
 
+/**
+ * Variant for endpoints that answer with an empty body (204 / bodyless 200), so
+ * we never try to parse JSON and blow up on a successful request.
+ */
+async function apiRequestNoContent(
+  endpoint: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<void> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({
+      message: `Request failed with status ${response.status}`,
+    }));
+    throw new ApiError(
+      error.message || `HTTP error ${response.status}`,
+      response.status
+    );
+  }
+}
+
 export const authApi = {
   verify: (token: string) =>
     apiRequest<User>("/auth/verify", {
@@ -87,17 +238,401 @@ export const authApi = {
 export const usersApi = {
   getMe: (token: string) => apiRequest<User>("/users/me", {}, token),
 
-  updateProfile: (
-    token: string,
-    data: { username?: string; photoUrl?: string }
-  ) =>
+  updateProfile: (token: string, data: UpdateProfileData) =>
     apiRequest<User>(
       "/users/profile",
       { method: "PATCH", body: JSON.stringify(data) },
       token
     ),
 
-  getByUid: (uid: string) => apiRequest<User>(`/users/${uid}`),
+  checkUsernameAvailability: (username: string, token: string) =>
+    apiRequest<UsernameAvailability>(
+      `/users/me/username-available?username=${encodeURIComponent(username)}`,
+      {},
+      token
+    ),
+
+  searchUsers: (query: string, token: string) =>
+    apiRequest<SearchUserResult[]>(
+      `/users/search?q=${encodeURIComponent(query)}`,
+      {},
+      token
+    ),
+
+  getPublicProfileByUsername: (username: string, token: string) =>
+    apiRequest<PublicProfile>(
+      `/users/username/${encodeURIComponent(username)}`,
+      {},
+      token
+    ),
+
+  getPublicProfileByUid: (uid: string, token: string) =>
+    apiRequest<PublicProfile>(`/users/${encodeURIComponent(uid)}`, {}, token),
+};
+
+function followsListPath(
+  userId: string,
+  kind: "followers" | "following",
+  cursor?: string,
+  limit?: number
+): string {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit) params.set("limit", String(limit));
+  const qs = params.toString();
+  return `/follows/${encodeURIComponent(userId)}/${kind}${
+    qs ? `?${qs}` : ""
+  }`;
+}
+
+export const followsApi = {
+  followUser: (userId: string, token: string) =>
+    apiRequest<FollowActionResult>(
+      `/follows/${encodeURIComponent(userId)}`,
+      { method: "POST" },
+      token
+    ),
+
+  unfollowUser: (userId: string, token: string) =>
+    apiRequest<FollowActionResult>(
+      `/follows/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  getFollowStatus: (userId: string, token: string) =>
+    apiRequest<FollowStatusResult>(
+      `/follows/${encodeURIComponent(userId)}/status`,
+      {},
+      token
+    ),
+
+  getCounts: (userId: string, token: string) =>
+    apiRequest<FollowCountsResult>(
+      `/follows/${encodeURIComponent(userId)}/counts`,
+      {},
+      token
+    ),
+
+  getFollowers: (
+    userId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) =>
+    apiRequest<FollowListResult>(
+      followsListPath(userId, "followers", cursor, limit),
+      {},
+      token
+    ),
+
+  getFollowing: (
+    userId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) =>
+    apiRequest<FollowListResult>(
+      followsListPath(userId, "following", cursor, limit),
+      {},
+      token
+    ),
+};
+
+/**
+ * Phase 35 social safety.
+ *
+ * Addressing notes that are easy to get wrong:
+ *
+ *  - `blockUser` takes a uid because the caller legitimately holds one (the
+ *    viewer is looking at a profile).
+ *  - `unblockUser` takes a USERNAME, not a uid. `GET /blocks` returns usernames
+ *    and display names with no uid, so a list row has nothing else to send. The
+ *    backend resolves the username through the `usernames` claim collection and
+ *    still deletes the same deterministic block document, so this is an
+ *    addressing choice rather than a second write path.
+ *
+ * Both block endpoints are idempotent; `created` in the response reports
+ * whether anything actually changed.
+ */
+export const safetyApi = {
+  blockUser: (userId: string, token: string) =>
+    apiRequest<BlockResponse>(
+      `/blocks/${encodeURIComponent(userId)}`,
+      { method: "POST" },
+      token
+    ),
+
+  /** Unblock by the blocked user's public username. */
+  unblockUser: (username: string, token: string) =>
+    apiRequest<BlockResponse>(
+      `/blocks/by-username/${encodeURIComponent(username)}`,
+      { method: "DELETE" },
+      token
+    ),
+
+  getBlockedUsers: (token: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (typeof limit === "number") params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<BlockedUsersListResult>(
+      `/blocks${qs ? `?${qs}` : ""}`,
+      {},
+      token
+    );
+  },
+
+  /**
+   * File a report. The backend rejects any extra field (`reporterId`,
+   * `status`, …) via the global `forbidNonWhitelisted` pipe, so this sends
+   * exactly the three writable keys.
+   */
+  createReport: (input: CreateReportInput, token: string) =>
+    apiRequest<MyReport>(
+      "/reports",
+      { method: "POST", body: JSON.stringify(input) },
+      token
+    ),
+
+  getMyReports: (token: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (typeof limit === "number") params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<MyReportsListResult>(
+      `/reports/mine${qs ? `?${qs}` : ""}`,
+      {},
+      token
+    );
+  },
+};
+
+export const feedApi = {
+  /**
+   * Growth feed for the authenticated user: real activities generated by
+   * SkillUp (habit completions, streak milestones, achievement unlocks,
+   * daily quest completions) from the viewer plus their followed users.
+   */
+  getFeed: (token: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (typeof limit === "number") params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<GrowthFeedResult>(`/feed${qs ? `?${qs}` : ""}`, {}, token);
+  },
+};
+
+// ─── Growth Circles (Phase 34) ─────────────────────────────────────────────
+
+function circlePath(circleId: string, suffix = ""): string {
+  return `/circles/${encodeURIComponent(circleId)}${suffix}`;
+}
+
+function circleMemberPath(circleId: string, userId: string, suffix = ""): string {
+  return `${circlePath(
+    circleId,
+    `/members/${encodeURIComponent(userId)}`
+  )}${suffix}`;
+}
+
+/** Shared query-string builder for the cursor-paginated circle endpoints. */
+function circleListQuery(options: {
+  cursor?: string;
+  limit?: number;
+  topic?: string;
+  search?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (typeof options.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (options.topic) params.set("topic", options.topic);
+  if (options.search) params.set("search", options.search);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/**
+ * Growth Circles.
+ *
+ * Every call carries the bearer token, and the acting user is always derived
+ * from it server-side — there is no parameter here that says who is acting.
+ * `topic` and `search` are sent as query params so filtering happens in
+ * Firestore, not in the browser.
+ */
+export const circlesApi = {
+  /** Circles the viewer belongs to, newest membership first. */
+  getMyCircles: (token: string, cursor?: string, limit?: number) =>
+    apiRequest<CircleListResult>(
+      `/circles${circleListQuery({ cursor, limit })}`,
+      {},
+      token
+    ),
+
+  /** Discoverable PUBLIC circles, optionally filtered by topic / name prefix. */
+  discoverCircles: (
+    token: string,
+    options: { topic?: string; search?: string; cursor?: string; limit?: number } = {}
+  ) =>
+    apiRequest<CircleListResult>(
+      `/circles/discover${circleListQuery(options)}`,
+      {},
+      token
+    ),
+
+  /** A circle's detail. A private circle 404s for non-members, server-side. */
+  getCircle: (circleId: string, token: string) =>
+    apiRequest<GrowthCircle>(circlePath(circleId), {}, token),
+
+  /** Circle members. Open for public circles, members-only for private ones. */
+  getCircleMembers: (
+    circleId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) =>
+    apiRequest<CircleMemberListResult>(
+      `${circlePath(circleId, "/members")}${circleListQuery({ cursor, limit })}`,
+      {},
+      token
+    ),
+
+  /** Creates a circle; the creator becomes OWNER server-side. */
+  createCircle: (input: CreateCircleInput, token: string) =>
+    apiRequest<GrowthCircle>("/circles", { method: "POST", body: JSON.stringify(input) }, token),
+
+  /** Partial edit of the caller's own circle fields (owner/admin only). */
+  updateCircle: (
+    circleId: string,
+    input: UpdateCircleInput,
+    token: string
+  ) =>
+    apiRequest<GrowthCircle>(
+      circlePath(circleId),
+      { method: "PATCH", body: JSON.stringify(input) },
+      token
+    ),
+
+  /** Joins a public circle. Idempotent server-side. */
+  joinCircle: (circleId: string, token: string) =>
+    apiRequest<CircleMembershipResult>(
+      circlePath(circleId, "/join"),
+      { method: "POST" },
+      token
+    ),
+
+  /** Leaves a circle. The owner cannot leave. */
+  leaveCircle: (circleId: string, token: string) =>
+    apiRequest<CircleMembershipResult>(
+      circlePath(circleId, "/leave"),
+      { method: "POST" },
+      token
+    ),
+
+  /** Adds a known user directly — how private circles gain members. */
+  addCircleMember: (circleId: string, userId: string, token: string) =>
+    apiRequest<CircleMembershipResult>(
+      circlePath(circleId, "/members"),
+      { method: "POST", body: JSON.stringify({ userId }) },
+      token
+    ),
+
+  /** Removes a member. Owner may remove admin/member; admin only member. */
+  removeCircleMember: (
+    circleId: string,
+    userId: string,
+    token: string
+  ) =>
+    apiRequest<CircleMembershipResult>(
+      circleMemberPath(circleId, userId),
+      { method: "DELETE" },
+      token
+    ),
+
+  /** Sets a member's role to ADMIN or MEMBER. OWNER is not assignable. */
+  setCircleMemberRole: (
+    circleId: string,
+    userId: string,
+    role: CircleRole,
+    token: string
+  ) =>
+    apiRequest<CircleMembershipResult>(
+      circleMemberPath(circleId, userId, "/role"),
+      { method: "PATCH", body: JSON.stringify({ role }) },
+      token
+    ),
+};
+
+function activityPath(activityId: string, suffix = ""): string {
+  return `/growth-activities/${encodeURIComponent(activityId)}${suffix}`;
+}
+
+function commentsPath(
+  activityId: string,
+  cursor?: string,
+  limit?: number
+): string {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (typeof limit === "number") params.set("limit", String(limit));
+  const qs = params.toString();
+  return `${activityPath(activityId, "/comments")}${qs ? `?${qs}` : ""}`;
+}
+
+/**
+ * Social interaction layer for growth activities: cheer reactions, short support
+ * comments and the shareable activity view. The acting user is always derived
+ * from the bearer token server-side, so no user id is ever sent from the client.
+ */
+export const activityApi = {
+  /** Shareable single-activity view (privacy-gated server-side). */
+  getActivity: (activityId: string, token: string) =>
+    apiRequest<GrowthActivityDetail>(activityPath(activityId), {}, token),
+
+  getReactions: (activityId: string, token: string) =>
+    apiRequest<ReactionMapResult>(
+      activityPath(activityId, "/reactions"),
+      {},
+      token
+    ),
+
+  /** Adds or changes the viewer's reaction (idempotent upsert). */
+  setReaction: (activityId: string, token: string, type: ReactionType) =>
+    apiRequest<ReactionMapResult>(
+      activityPath(activityId, "/reactions"),
+      { method: "POST", body: JSON.stringify({ type }) },
+      token
+    ),
+
+  removeReaction: (activityId: string, token: string) =>
+    apiRequest<ReactionRemoveResult>(
+      activityPath(activityId, "/reactions"),
+      { method: "DELETE" },
+      token
+    ),
+
+  getComments: (
+    activityId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) => apiRequest<CommentListResult>(commentsPath(activityId, cursor, limit), {}, token),
+
+  createComment: (activityId: string, token: string, content: string) =>
+    apiRequest<ActivityComment>(
+      activityPath(activityId, "/comments"),
+      { method: "POST", body: JSON.stringify({ content }) },
+      token
+    ),
+
+  deleteComment: (activityId: string, commentId: string, token: string) =>
+    apiRequestNoContent(
+      `${activityPath(activityId, "/comments")}/${encodeURIComponent(commentId)}`,
+      { method: "DELETE" },
+      token
+    ),
 };
 
 export const habitsApi = {
@@ -223,8 +758,21 @@ export const leaderboardApi = {
 };
 
 export const notificationsApi = {
-  getAll: (token: string) =>
-    apiRequest<Notification[]>("/notifications", {}, token),
+  /**
+   * Newest-first cursor page. `cursor` is the opaque `nextCursor` from the
+   * previous page; omit it for the first page.
+   */
+  getAll: (token: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (limit != null) params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<NotificationPage>(
+      `/notifications${qs ? `?${qs}` : ""}`,
+      {},
+      token
+    );
+  },
 
   getUnreadCount: (token: string) =>
     apiRequest<{ unreadCount: number }>("/notifications/unread-count", {}, token),
@@ -250,6 +798,95 @@ export const notificationsApi = {
     apiRequest<{ message: string }>(
       `/notifications/${id}`,
       { method: "DELETE" },
+      token
+    ),
+};
+
+/**
+ * Phase 32 direct messaging.
+ *
+ * Note what is never sent from the browser: the acting user, the sender, the
+ * recipient, and timestamps. `GET /conversations` takes no userId because the
+ * inbox is the token's own; `createConversation` sends only the TARGET uid; and
+ * `sendMessage` sends only the text plus an optional idempotency key. The
+ * backend derives everything else, so there is no request shape that could
+ * impersonate another participant.
+ */
+export const conversationsApi = {
+  /** Newest-first cursor page of the viewer's own conversations. */
+  list: (token: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (limit != null) params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<ConversationPage>(
+      `/conversations${qs ? `?${qs}` : ""}`,
+      {},
+      token
+    );
+  },
+
+  /** Get-or-create: the backend returns the existing conversation if there is one. */
+  create: (token: string, targetUserId: string) =>
+    apiRequest<Conversation>(
+      "/conversations",
+      { method: "POST", body: JSON.stringify({ userId: targetUserId }) },
+      token
+    ),
+
+  get: (conversationId: string, token: string) =>
+    apiRequest<Conversation>(
+      `/conversations/${encodeURIComponent(conversationId)}`,
+      {},
+      token
+    ),
+
+  /** Newest-first cursor page. Later pages are OLDER messages. */
+  listMessages: (
+    conversationId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (limit != null) params.set("limit", String(limit));
+    const qs = params.toString();
+    return apiRequest<MessagePage>(
+      `/conversations/${encodeURIComponent(conversationId)}/messages${
+        qs ? `?${qs}` : ""
+      }`,
+      {},
+      token
+    );
+  },
+
+  /**
+   * `clientMessageId` makes the send idempotent, which is what protects against
+   * a network-level retry (the disabled send button only covers double-clicks).
+   * It is a plain client-generated key and grants no authority.
+   */
+  sendMessage: (
+    conversationId: string,
+    token: string,
+    text: string,
+    clientMessageId?: string
+  ) =>
+    apiRequest<Message>(
+      `/conversations/${encodeURIComponent(conversationId)}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(
+          clientMessageId ? { text, clientMessageId } : { text }
+        ),
+      },
+      token
+    ),
+
+  markRead: (conversationId: string, token: string) =>
+    apiRequest<Conversation>(
+      `/conversations/${encodeURIComponent(conversationId)}/read`,
+      { method: "PATCH" },
       token
     ),
 };
