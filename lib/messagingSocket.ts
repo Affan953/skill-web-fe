@@ -17,9 +17,12 @@
 
 import { io, type Socket } from "socket.io-client";
 import type {
+  CircleMessage,
+  CircleMessagePage,
   ConversationPage,
   Message,
   MessagePage,
+  ThreadCircleMessage,
   ThreadMessage,
 } from "@/types";
 import {
@@ -50,6 +53,31 @@ export const MESSAGING_EVENTS = {
   NewMessage: "message:new",
   AckMessage: "message:ack",
   ErrorMessage: "message:error",
+
+  // ── Phase 37: Circle discussion ───────────────────────────────────────────
+  //
+  // Namespaced `circle:*` rather than reused from the DM set, matching the
+  // backend's own split in `skill-be/src/messages/messaging-events.ts`, so the
+  // two surfaces can never be confused for one another in a listener.
+
+  /** Client → server: "I am looking at this circle's discussion." */
+  JoinCircle: "circle:join",
+  /** Server → client: the circle room was joined after membership was verified. */
+  JoinedCircle: "circle:joined",
+  /** Client → server: "I am no longer looking at this circle." */
+  LeaveCircle: "circle:leave",
+  /** Server → client: the circle room was left. */
+  LeftCircle: "circle:left",
+  /** Client → server: send a Circle discussion message. */
+  SendCircleMessage: "circle:message:send",
+  /** Server → clients: a Circle discussion message was committed to Firestore. */
+  NewCircleMessage: "circle:message:new",
+  /** Server → sender: the stored version of the Circle message just sent. */
+  AckCircleMessage: "circle:message:ack",
+  /** Server → client: a Circle send failed, with a typed code. */
+  ErrorCircleMessage: "circle:message:error",
+  /** Server → clients: a Circle message was moderated away. */
+  CircleMessageDeleted: "circle:message:deleted",
 } as const;
 
 export const MESSAGING_ERROR_CODES = {
@@ -61,6 +89,18 @@ export const MESSAGING_ERROR_CODES = {
   MessageTooLong: "MESSAGE_TOO_LONG",
   MessageDuplicate: "MESSAGE_DUPLICATE",
   InternalError: "INTERNAL_ERROR",
+
+  // ── Phase 37: Circle discussion ───────────────────────────────────────────
+  //
+  // `CIRCLE_NOT_FOUND` is one code for "the circle does not exist" and "you are
+  // not a member of it", exactly like `CONVERSATION_NOT_FOUND` in DMs: reporting
+  // the difference over a socket would turn it into an existence oracle for
+  // private circles. It is also the answer for a PUBLIC circle whose name the
+  // caller may see, but whose discussion they cannot read.
+
+  CircleNotFound: "CIRCLE_NOT_FOUND",
+  CircleMessageInvalid: "CIRCLE_MESSAGE_INVALID",
+  CircleMessageTooLong: "CIRCLE_MESSAGE_TOO_LONG",
 } as const;
 
 export type MessagingErrorCode =
@@ -140,6 +180,9 @@ const MESSAGING_ERROR_COPY: Record<MessagingErrorCode, string> = {
   MESSAGE_TOO_LONG: "That message is too long. Please shorten it a little.",
   MESSAGE_DUPLICATE: "That message was already sent.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
+  CIRCLE_NOT_FOUND: "You don't have access to this circle's discussion.",
+  CIRCLE_MESSAGE_INVALID: "Please write a message before sending.",
+  CIRCLE_MESSAGE_TOO_LONG: "That message is too long. Please shorten it a little.",
 };
 
 /** A stable, user-safe sentence for any code, including an unknown one. */
@@ -222,6 +265,10 @@ export function connectionStatusLabel(status: ConnectionStatus): string {
  *  • `CONVERSATION_NOT_FOUND` / `NOT_CONVERSATION_MEMBER` / `FORBIDDEN` — a real
  *    answer about who may write here, not a transport problem. REST enforces the
  *    same rule, so a retry cannot succeed.
+ *  • Phase 37's circle refusals, `CIRCLE_NOT_FOUND`, `CIRCLE_MESSAGE_INVALID` and
+ *    `CIRCLE_MESSAGE_TOO_LONG`, are the identical situation restated for circles:
+ *    the server already read and rejected the request, and REST would refuse it
+ *    exactly the same way — so proceeding to REST would only repeat a no.
  *
  * Everything else is a transport symptom: a socket that is not up, an ack that
  * never arrived, or `INTERNAL_ERROR` where the socket genuinely cannot tell a
@@ -237,6 +284,9 @@ export function shouldFallBackToRest(code: string | null | undefined): boolean {
     case MESSAGING_ERROR_CODES.ConversationNotFound:
     case MESSAGING_ERROR_CODES.MessageInvalid:
     case MESSAGING_ERROR_CODES.MessageTooLong:
+    case MESSAGING_ERROR_CODES.CircleNotFound:
+    case MESSAGING_ERROR_CODES.CircleMessageInvalid:
+    case MESSAGING_ERROR_CODES.CircleMessageTooLong:
       return false;
     default:
       return true;
@@ -519,6 +569,199 @@ export function countPendingMessages(
 /** True when the id is one of ours rather than a server-assigned one. */
 export function isOptimisticId(id: string): boolean {
   return id.startsWith(PENDING_MESSAGE_ID_PREFIX);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Circle message identity and cache merges (Phase 37)
+//
+// The same merge rules as the DM set, restated for the distinct Circle types.
+// Three inputs can describe the same message — the optimistic bubble, the
+// `circle:message:new` broadcast and the send's ack — and these are the one place
+// they are made to agree, idempotently. `applyCircleMessageDeleted` uses the
+// soft-delete shape the server broadcasts: only the id, the circle and the time,
+// never the text that was removed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Must match the backend's id format: `cm_<circleId>_<uid>_<clientMessageId>`. */
+export const CIRCLE_SERVER_MESSAGE_ID_PREFIX = "cm_";
+
+/** The wire answer to a `circle:message:send`. */
+export type CircleMessageSendResult =
+  | {
+      ok: true;
+      clientMessageId: string | null;
+      message: CircleMessage;
+    }
+  | {
+      ok: false;
+      clientMessageId: string | null;
+      code: MessagingErrorCode;
+      message: string;
+    };
+
+/** Server → client, `circle:message:deleted`. Text is deliberately absent. */
+export interface CircleMessageDeletedEvent {
+  circleId: string;
+  messageId: string;
+  deletedAt: string;
+}
+
+/**
+ * Recover the `clientMessageId` a stored Circle message was created from.
+ *
+ * The sender is in the circle room, so they receive a `circle:message:new` for
+ * their own message — and that broadcast can beat the send's ack. Without this,
+ * the optimistic `pending:<clientMessageId>` bubble and the server copy would
+ * both sit in the thread until the ack arrived.
+ *
+ * Server ids are `cm_<circleId>_<senderUid>_<sanitisedClientMessageId>`, so the
+ * tail is recoverable when this client is the sender. `null` is a real answer:
+ * someone else's message, or one stored without an idempotency key.
+ */
+export function deriveCircleClientMessageId(
+  message: Pick<CircleMessage, "id" | "circleId" | "senderId">,
+  currentUid: string
+): string | null {
+  if (!currentUid || message.senderId !== currentUid) return null;
+
+  const prefix = `${CIRCLE_SERVER_MESSAGE_ID_PREFIX}${message.circleId}_${currentUid}_`;
+  if (!message.id.startsWith(prefix)) return null;
+
+  const tail = message.id.slice(prefix.length);
+  return tail.length > 0 ? tail : null;
+}
+
+/** The optimistic bubble for a Circle send, mirroring `buildOptimisticMessage`. */
+export function buildOptimisticCircleMessage(input: {
+  pendingId: string;
+  circleId: string;
+  currentUid: string;
+  text: string;
+  clientMessageId: string;
+  createdAt: string;
+}): ThreadCircleMessage {
+  return {
+    id: input.pendingId,
+    circleId: input.circleId,
+    senderId: input.currentUid,
+    text: input.text,
+    createdAt: input.createdAt,
+    isDeleted: false,
+    deletedAt: null,
+    clientMessageId: input.clientMessageId,
+    pending: true,
+  };
+}
+
+/**
+ * Fold a Circle message into a newest-first page, exactly once.
+ *
+ * Resolution order, by id: drop any pending bubble for the same `clientMessageId`
+ * (the server copy replaces it), drop any existing entry with the same id, then
+ * insert in chronological position. The write is idempotent under StrictMode and
+ * under the broadcast/ack race, exactly like `mergeMessageNewestFirst`.
+ */
+export function mergeCircleMessageNewestFirst<T extends CircleMessage>(
+  items: readonly T[],
+  message: CircleMessage,
+  options: { currentUid: string; clientMessageId?: string | null }
+): T[] {
+  const clientMessageId =
+    options.clientMessageId ??
+    deriveCircleClientMessageId(message, options.currentUid);
+
+  let base = items;
+  if (clientMessageId) {
+    base = removeById(base, pendingMessageId(clientMessageId));
+  }
+  base = removeById(base, message.id);
+
+  return insertNewestFirst(base, message as T);
+}
+
+/** Newest first, by `createdAt` then id. */
+export function sortCircleNewestFirst<T extends CircleMessage>(
+  items: readonly T[]
+): T[] {
+  return items.slice().sort((a, b) => {
+    const delta =
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (delta !== 0) return delta;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
+}
+
+/**
+ * Fold a `circle:message:new` into the newest-first Circle message cache for the
+ * circle it names. Returns the original object identity when nothing changed, so
+ * a thread that did not change does not re-render or replay an animation.
+ */
+export function applyIncomingCircleMessage<D extends { pages: CircleMessagePage[] }>(
+  data: D | undefined,
+  message: CircleMessage,
+  currentUid: string
+): D | undefined {
+  if (!data || data.pages.length === 0) return data;
+
+  const alreadyLoaded = data.pages.some((page) =>
+    page.items.some((item) => item.id === message.id)
+  );
+  if (alreadyLoaded) return data;
+
+  return {
+    ...data,
+    pages: data.pages.map((page, index) =>
+      index === 0
+        ? {
+            ...page,
+            items: sortCircleNewestFirst(
+              mergeCircleMessageNewestFirst(page.items, message, { currentUid })
+            ),
+          }
+        : page
+    ),
+  };
+}
+
+/**
+ * Fold a `circle:message:deleted` into the cache.
+ *
+ * The message is marked as moderated away in place — text cleared, `deletedAt`
+ * stamped — because the soft delete is what keeps the thread's shape while
+ * taking the content away. Idempotent by message id, and a no-op when the id is
+ * not in the cache (a client is never handed content it was not shown; it is
+ * simply told that something is gone). Returns `undefined` when nothing changed,
+ * preserving the cached object's identity so no re-render is forced.
+ */
+export function applyCircleMessageDeleted<D extends { pages: CircleMessagePage[] }>(
+  data: D | undefined,
+  input: CircleMessageDeletedEvent
+): D | undefined {
+  if (!data || data.pages.length === 0) return data;
+
+  let changed = false;
+  const pages = data.pages.map((page) => ({
+    ...page,
+    items: page.items.map((item) => {
+      if (item.id !== input.messageId) return item;
+      // Already removed (a second moderator, or the sender's own broadcast).
+      if (item.isDeleted && item.deletedAt !== null) return item;
+      changed = true;
+      return {
+        ...item,
+        text: "",
+        isDeleted: true,
+        deletedAt: input.deletedAt,
+      };
+    }),
+  }));
+
+  return changed ? { ...data, pages } : data;
+}
+
+/** True for a bubble that is still waiting on its send. */
+export function isPendingCircleMessage(message: ThreadCircleMessage): boolean {
+  return message.pending === true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

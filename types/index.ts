@@ -799,6 +799,64 @@ export interface UpdateCircleInput {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Circle discussion — Phase 37
+//
+// Mirrors the backend DTOs in `src/growth-circles/dto/circle-message-response.dto.ts`.
+// The message only carries a `senderId`; identity is resolved from the circle
+// membership the viewer has already loaded, never from the message itself.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One stored Circle discussion message. */
+export interface CircleMessage {
+  id: string;
+  circleId: string;
+  /** UID of the sender (server-derived). Internal identity — never shown as text. */
+  senderId: string;
+  /** Empty when the message has been moderated away (`isDeleted` true). */
+  text: string;
+  createdAt: string;
+  isDeleted: boolean;
+  deletedAt: string | null;
+  /** The idempotency key this message was stored under, or null. */
+  clientMessageId: string | null;
+}
+
+/**
+ * One page of `GET /circles/:circleId/messages`, newest first, plus the viewer's
+ * unread state so the discussion and its badge are answered in one round trip.
+ */
+export interface CircleMessagePage {
+  items: CircleMessage[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  /** How many messages arrived since this member last opened the discussion. */
+  unreadCount: number;
+  /** Oldest unread message in this page; null when the boundary is behind it. */
+  unreadFromId: string | null;
+}
+
+/** Answer to `POST /circles/:circleId/messages/read`. */
+export interface CircleReadStateResponse {
+  circleId: string;
+  userId: string;
+  readAt: string;
+  unreadCount: number;
+}
+
+/**
+ * A Circle message as the discussion renders it.
+ *
+ * Identical to a server `CircleMessage`, plus the one thing a server message
+ * cannot express: that the client has drawn it and is waiting for confirmation.
+ * The optimistic copy carries a `pending:`-namespaced id, which no server id can
+ * ever match, so a pending bubble can be replaced in place and rolled back by id
+ * without ever shadowing or duplicating a real message.
+ */
+export interface ThreadCircleMessage extends CircleMessage {
+  pending?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Social safety — Phase 35
 //
 // These mirror the backend DTOs in `src/social-safety/dto/safety-response.dto.ts`.
@@ -907,4 +965,31 @@ export interface CreateReportInput {
   reportedUserId: string;
   reason: ReportReason;
   description: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI assistant
+//
+// `AiChatTurn` mirrors the backend `src/ai/ai.service.ts` type. The history is
+// server-persisted per user (`aiSessions/{uid}`), so the client only ever sends
+// the single new user turn plus an optional page context; the backend appends
+// it to the stored session and returns the full capped history.
+export interface AiChatTurn {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+/**
+ * One conversation, as ChatGPT-style history. Sessions live per user in
+ * `aiSessions/{uid}/chats/{id}`; the client only ever sends the single new
+ * user turn plus an optional page context and a `sessionId` when continuing
+ * an existing conversation.
+ */
+export interface AiChatSession {
+  id: string;
+  title: string;
+  messages: AiChatTurn[];
+  createdAt: string;
+  updatedAt: string;
 }

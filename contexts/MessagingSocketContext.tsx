@@ -20,13 +20,20 @@ import {
   CONVERSATION_QUERY_KEY,
   MESSAGES_QUERY_KEY,
 } from "@/hooks/useConversations";
+import { CIRCLE_MESSAGES_QUERY_KEY } from "@/hooks/useCircleMessages";
+import {
+  CIRCLE_DETAIL_QUERY_KEY,
+  CIRCLE_MEMBERS_QUERY_KEY,
+} from "@/hooks/useCircles";
 import { auth } from "@/lib/firebase";
-import { conversationsApi } from "@/lib/api";
+import { conversationsApi, circlesApi } from "@/lib/api";
 import {
   MESSAGING_EVENTS,
   MessagingError,
   applyIncomingMessage,
   applyIncomingToConversations,
+  applyIncomingCircleMessage,
+  applyCircleMessageDeleted,
   canSendOverSocket,
   connectionStatusLabel,
   conversationIsMissing,
@@ -34,10 +41,18 @@ import {
   emitWithAck,
   shouldFallBackToRest,
   shouldSurfaceConnectionWarning,
+  type CircleMessageDeletedEvent,
+  type CircleMessageSendResult,
   type ConnectionStatus,
   type MessageSendResult,
 } from "@/lib/messagingSocket";
-import type { ConversationPage, Message, MessagePage } from "@/types";
+import type {
+  CircleMessage,
+  CircleMessagePage,
+  ConversationPage,
+  Message,
+  MessagePage,
+} from "@/types";
 
 /**
  * The one messaging socket for the whole app.
@@ -79,6 +94,24 @@ export interface MessagingSocketContextValue {
     text: string;
     clientMessageId: string;
   }) => Promise<Message>;
+  /** The circle whose discussion is currently open, for the room join. */
+  activeCircleId: string | null;
+  setActiveCircleId: (circleId: string | null) => void;
+  /** Join the discussion room for an open circle. No-op while the socket is down. */
+  joinCircle: (circleId: string) => void;
+  leaveCircle: (circleId: string) => void;
+  /**
+   * Send a Circle discussion message over the socket, falling back to REST.
+   *
+   * The same contract as `sendMessage`: the fallback reuses the same
+   * `clientMessageId`, so a committed-but-unacknowledged send collapses onto the
+   * one document instead of posting twice.
+   */
+  sendCircleMessage: (input: {
+    circleId: string;
+    text: string;
+    clientMessageId: string;
+  }) => Promise<CircleMessage>;
 }
 
 export const MessagingSocketContext =
@@ -143,6 +176,11 @@ export function MessagingSocketProvider({
     string | null
   >(null);
 
+  // The circle whose discussion is open. Mirrors `activeConversationId`; the two
+  // are separate so joining a circle's room never interferes with a conversation
+  // room and a conversation listener can never be confused by a circle event.
+  const [activeCircleId, setActiveCircleId] = useState<string | null>(null);
+
   const socketRef = useRef<Socket | null>(null);
   const uid = firebaseUser?.uid ?? "";
 
@@ -192,6 +230,12 @@ export function MessagingSocketProvider({
    */
   const joinedRoomRef = useRef<string | null>(null);
 
+  // The circle this socket has actually been joined to, and the one the viewers
+  // believes is open. Same lifecycle contract as `joinedRoomRef`: cleared when
+  // the transport is lost, claimed optimistically until the join ack lands so a
+  // repeated connect event cannot emit two joins for one room.
+  const joinedCircleRef = useRef<string | null>(null);
+
   const effectiveStatus: ConnectionStatus = !token
     ? "idle"
     : statusState?.token === token
@@ -207,11 +251,13 @@ export function MessagingSocketProvider({
   // values are always current by the time they matter.
   const uidRef = useRef(uid);
   const activeConversationRef = useRef<string | null>(null);
+  const activeCircleRef = useRef<string | null>(null);
   const isVisibleRef = useRef(isVisible);
 
   useEffect(() => {
     uidRef.current = uid;
     activeConversationRef.current = activeConversationId;
+    activeCircleRef.current = activeCircleId;
     isVisibleRef.current = isVisible;
   });
 
@@ -282,6 +328,60 @@ export function MessagingSocketProvider({
     [queryClient]
   );
 
+  /**
+   * Fold one `circle:message:new` into the circle discussion cache.
+   *
+   * Circles have no list-level unread to maintain — the unread count lives in the
+   * messages page itself — so this is a single write into the exact cache entry
+   * `useCircleMessages` already reads. A message for a circle whose page is not
+   * loaded (the viewer is elsewhere, or has never opened it) writes nowhere and
+   * costs nothing; the count is recomputed from REST on the next open.
+   */
+  const applyCircleMessage = useCallback(
+    (message: CircleMessage) => {
+      const currentUid = uidRef.current;
+      if (!currentUid || !message?.id || !message?.circleId) return;
+
+      queryClient.setQueryData<InfiniteData<CircleMessagePage, string | null>>(
+        CIRCLE_MESSAGES_QUERY_KEY(currentUid, message.circleId),
+        (old) => applyIncomingCircleMessage(old, message, currentUid)
+      );
+    },
+    [queryClient]
+  );
+
+  /** Fold a `circle:message:deleted` into the open discussion. */
+  const applyCircleDeleted = useCallback(
+    (event: CircleMessageDeletedEvent) => {
+      const currentUid = uidRef.current;
+      if (!currentUid || !event?.circleId || !event?.messageId) return;
+
+      queryClient.setQueryData<InfiniteData<CircleMessagePage, string | null>>(
+        CIRCLE_MESSAGES_QUERY_KEY(currentUid, event.circleId),
+        (old) => applyCircleMessageDeleted(old, event)
+      );
+    },
+    [queryClient]
+  );
+
+  /**
+   * A membership revocation pulled the socket out of a circle it still believed
+   * it was in. The membership ended over REST too, so the circle page's own reads
+   * are stale — invalidating them lets the detail answer 404 / non-member and the
+   * page flip out of the discussion without a manual refetch.
+   */
+  const markCircleRevoked = useCallback(
+    (circleId: string) => {
+      void queryClient.invalidateQueries({
+        queryKey: CIRCLE_DETAIL_QUERY_KEY(circleId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CIRCLE_MEMBERS_QUERY_KEY(circleId),
+      });
+    },
+    [queryClient]
+  );
+
   /** Send over REST, or as the fallback when the socket cannot be used. */
   const sendViaRest = useCallback(
     async (input: SendInput): Promise<Message> => {
@@ -333,6 +433,62 @@ export function MessagingSocketProvider({
     [effectiveStatus, sendViaRest]
   );
 
+  /** Send a Circle message over REST, or as the socket's fallback. */
+  const sendCircleMessageViaRest = useCallback(
+    async (input: {
+      circleId: string;
+      text: string;
+      clientMessageId: string;
+    }): Promise<CircleMessage> => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Not authenticated");
+      const currentToken = await currentUser.getIdToken();
+      return circlesApi.sendCircleMessage(
+        input.circleId,
+        currentToken,
+        input.text,
+        input.clientMessageId
+      );
+    },
+    []
+  );
+
+  const sendCircleMessage = useCallback(
+    async (input: {
+      circleId: string;
+      text: string;
+      clientMessageId: string;
+    }): Promise<CircleMessage> => {
+      const socket = socketRef.current;
+
+      if (!socket || !socket.connected || !canSendOverSocket(effectiveStatus)) {
+        return sendCircleMessageViaRest(input);
+      }
+
+      try {
+        const result = await emitWithAck<CircleMessageSendResult>(
+          socket,
+          MESSAGING_EVENTS.SendCircleMessage,
+          {
+            circleId: input.circleId,
+            text: input.text,
+            clientMessageId: input.clientMessageId,
+          }
+        );
+        if (!result?.ok) {
+          throw new MessagingError(result?.code ?? "INTERNAL_ERROR");
+        }
+        return result.message;
+      } catch (error) {
+        if (error instanceof MessagingError && !shouldFallBackToRest(error.code)) {
+          throw error;
+        }
+        return sendCircleMessageViaRest(input);
+      }
+    },
+    [effectiveStatus, sendCircleMessageViaRest]
+  );
+
   // ── the connection ─────────────────────────────────────────────────────────
   //
   // Rebuilt on every token change, so a reconnect always presents a live token.
@@ -342,8 +498,9 @@ export function MessagingSocketProvider({
     const socket = createMessagingSocket({ url: API_BASE_URL, token });
     socketRef.current = socket;
     // A new socket knows about no rooms, so nothing carried over from the one it
-    // replaces — including the join this provider believes it has.
+    // replaces — including the joins this provider believes it has.
     joinedRoomRef.current = null;
+    joinedCircleRef.current = null;
 
     // Every status write is tagged with this effect's token, so a report from a
     // socket that has already been torn down cannot describe the new one.
@@ -354,6 +511,7 @@ export function MessagingSocketProvider({
       // The rooms went with the transport, so the belief that this socket is in a
       // conversation has to go with it.
       joinedRoomRef.current = null;
+      joinedCircleRef.current = null;
       setStatusState((current) =>
         // A status already meaning "unavailable" is deliberately not upgraded
         // back to "reconnecting": a socket the server keeps rejecting should keep
@@ -401,14 +559,62 @@ export function MessagingSocketProvider({
       }
     );
 
+    // ── Phase 37: Circle discussion ─────────────────────────────────────────
+    socket.on(
+      MESSAGING_EVENTS.NewCircleMessage,
+      (payload: { message?: CircleMessage } | null) => {
+        if (!payload?.message) return;
+        applyCircleMessage(payload.message);
+      }
+    );
+
+    // The sender's own copy. The ack callback already resolves that path, so this
+    // listener is the same safety net as `AckMessage`: a send that fell back to
+    // REST or an ack that was lost still folds the real message in.
+    socket.on(
+      MESSAGING_EVENTS.AckCircleMessage,
+      (payload: { message?: CircleMessage } | null) => {
+        if (!payload?.message) return;
+        applyCircleMessage(payload.message);
+      }
+    );
+
+    socket.on(
+      MESSAGING_EVENTS.CircleMessageDeleted,
+      (payload: CircleMessageDeletedEvent | null) => {
+        if (!payload) return;
+        applyCircleDeleted(payload);
+      }
+    );
+
+    // Only a membership revocation is worth acting on. A normal leave produces a
+    // `circle:left` with no reason, and the room is already gone from this side;
+    // a revocation means the server pulled the socket out of a room the client
+    // still believed it was in, so the provider stops announcing that circle as
+    // open and the thread can draw its membership-ended state.
+    socket.on(
+      MESSAGING_EVENTS.LeftCircle,
+      (payload: { circleId?: string; reason?: string } | null) => {
+        if (!payload?.circleId) return;
+        if (
+          payload.reason === "membership_revoked" &&
+          activeCircleRef.current === payload.circleId
+        ) {
+          setActiveCircleId(null);
+          markCircleRevoked(payload.circleId);
+        }
+      }
+    );
+
     return () => {
       socket.removeAllListeners();
       socket.io.removeAllListeners();
       socket.disconnect();
       joinedRoomRef.current = null;
+      joinedCircleRef.current = null;
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [token, applyMessage]);
+  }, [token, applyMessage, applyCircleMessage, applyCircleDeleted, markCircleRevoked]);
 
   /**
    * Room membership follows the open thread.
@@ -463,6 +669,52 @@ export function MessagingSocketProvider({
   }, [activeConversationId, connectionEpoch]);
 
   /**
+   * Circle room membership follows the open discussion.
+   *
+   * The same machinery as the conversation room above, for the circle the viewer
+   * is looking at. Keyed on `connectionEpoch` so a reconnect re-joins the room
+   * after the transport comes back, and the join is acked so membership is
+   * re-verified by the server — which is also what pulls a removed member's socket
+   * out of the room once the reconnect replaces its rooms.
+   */
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected || !activeCircleId) return;
+
+    // Already joined on THIS connection. Claimed by the ack path below, so a
+    // repeated connect event cannot emit a second join for one room.
+    if (joinedCircleRef.current === activeCircleId) return;
+
+    const circleId = activeCircleId;
+    joinedCircleRef.current = circleId;
+
+    void emitWithAck<{ ok?: boolean }>(
+      socket,
+      MESSAGING_EVENTS.JoinCircle,
+      { circleId },
+    )
+      .then((answer) => {
+        if (answer?.ok === false && joinedCircleRef.current === circleId) {
+          joinedCircleRef.current = null;
+        }
+      })
+      .catch(() => {
+        if (joinedCircleRef.current === circleId) {
+          joinedCircleRef.current = null;
+        }
+      });
+
+    return () => {
+      if (socket.connected) {
+        socket.emit(MESSAGING_EVENTS.LeaveCircle, { circleId });
+      }
+      if (joinedCircleRef.current === circleId) {
+        joinedCircleRef.current = null;
+      }
+    };
+  }, [activeCircleId, connectionEpoch]);
+
+  /**
    * Reconcile after a gap.
    *
    * A socket that was disconnected may have missed messages, and a backgrounded
@@ -490,6 +742,14 @@ export function MessagingSocketProvider({
     );
   }, []);
 
+  const joinCircle = useCallback((circleId: string) => {
+    setActiveCircleId(circleId);
+  }, []);
+
+  const leaveCircle = useCallback((circleId: string) => {
+    setActiveCircleId((current) => (current === circleId ? null : current));
+  }, []);
+
   const value = useMemo<MessagingSocketContextValue>(
     () => ({
       status: effectiveStatus,
@@ -500,6 +760,11 @@ export function MessagingSocketProvider({
       joinConversation,
       leaveConversation,
       sendMessage,
+      activeCircleId,
+      setActiveCircleId,
+      joinCircle,
+      leaveCircle,
+      sendCircleMessage,
     }),
     [
       effectiveStatus,
@@ -507,6 +772,10 @@ export function MessagingSocketProvider({
       joinConversation,
       leaveConversation,
       sendMessage,
+      activeCircleId,
+      joinCircle,
+      leaveCircle,
+      sendCircleMessage,
     ]
   );
 

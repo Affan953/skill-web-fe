@@ -20,6 +20,9 @@ import type {
   CircleListResult,
   CircleMemberListResult,
   CircleMembershipResult,
+  CircleMessage,
+  CircleMessagePage,
+  CircleReadStateResponse,
   CircleRole,
   CreateCircleInput,
   GrowthCircle,
@@ -62,6 +65,8 @@ import type {
   MyReport,
   MyReportsListResult,
   CreateReportInput,
+  AiChatTurn,
+  AiChatSession,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -118,6 +123,17 @@ export function getUserFacingError(error: unknown): string {
         return "Please write a message before sending.";
       case "MESSAGE_TOO_LONG":
         return "That message is too long. Please shorten it a little.";
+      // ── AI assistant ──
+      case "EMPTY_MESSAGE":
+        return "Write something before sending.";
+      case "AI_RATE_LIMITED":
+        return "You\u2019ve reached this hour\u2019s message limit. Come back in a bit.";
+      case "AI_NOT_CONFIGURED":
+        return "The assistant isn\u2019t set up yet.";
+      case "AI_UNAVAILABLE":
+      case "AI_UPSTREAM_ERROR":
+      case "AI_EMPTY_RESPONSE":
+        return "The assistant couldn\u2019t respond right now. Please try again.";
       // ── Phase 35 social safety ──
       //
       // USER_BLOCKED deliberately has no wording that distinguishes the two
@@ -142,6 +158,21 @@ export function getUserFacingError(error: unknown): string {
         return "You’ve already reported this person for that reason.";
       case "CIRCLE_NOT_JOINABLE":
         return "This circle can’t be joined.";
+      // ── Phase 37 circle discussion ──
+      //
+      // CIRCLE_NOT_FOUND keeps the same privacy-neutral tone as CONVERSATION_NOT_FOUND:
+      // one code for "does not exist" and "you are not a member", so the copy must not
+      // reintroduce the distinction the backend deliberately removed.
+      case "CIRCLE_NOT_FOUND":
+        return "This discussion could not be found.";
+      case "CIRCLE_PERMISSION_DENIED":
+        return "You’d need to be a circle moderator to do that.";
+      case "CIRCLE_MESSAGE_NOT_FOUND":
+        return "This message could not be found.";
+      case "INVALID_CIRCLE_MESSAGE":
+        return "Please write a message before sending.";
+      case "CIRCLE_MESSAGE_TOO_LONG":
+        return "That message is too long. Please shorten it a little.";
       default:
         break;
     }
@@ -563,6 +594,60 @@ export const circlesApi = {
       { method: "PATCH", body: JSON.stringify({ role }) },
       token
     ),
+
+  // ─── Circle discussion (Phase 37) ─────────────────────────────────────────
+  //
+  // The actor is the token's owner, never a body field: no `senderId`, user id or
+  // role crosses the wire. `clientMessageId` is the only client-supplied value on
+  // a send, and it carries no authority — it only selects which document id is
+  // written, so a retry collapses onto the message that already exists.
+
+  /** Newest-first cursor page of a circle's discussion, plus the viewer's unread state. */
+  getCircleMessages: (
+    circleId: string,
+    token: string,
+    cursor?: string,
+    limit?: number
+  ) =>
+    apiRequest<CircleMessagePage>(
+      `${circlePath(circleId, "/messages")}${circleListQuery({ cursor, limit })}`,
+      {},
+      token
+    ),
+
+  /** Posts a message. `clientMessageId` makes the send idempotent. */
+  sendCircleMessage: (
+    circleId: string,
+    token: string,
+    text: string,
+    clientMessageId?: string
+  ) =>
+    apiRequest<CircleMessage>(
+      circlePath(circleId, "/messages"),
+      {
+        method: "POST",
+        body: JSON.stringify(
+          clientMessageId ? { text, clientMessageId } : { text }
+        ),
+      },
+      token
+    ),
+
+  /** Marks the CALLER's own discussion read. Never affects anyone else. */
+  markCircleRead: (circleId: string, token: string) =>
+    apiRequest<CircleReadStateResponse>(
+      circlePath(circleId, "/messages/read"),
+      { method: "POST" },
+      token
+    ),
+
+  /** Moderates a message out of the discussion (OWNER/ADMIN only). Soft delete. */
+  deleteCircleMessage: (circleId: string, messageId: string, token: string) =>
+    apiRequestNoContent(
+      circlePath(circleId, `/messages/${encodeURIComponent(messageId)}`),
+      { method: "DELETE" },
+      token
+    ),
 };
 
 function activityPath(activityId: string, suffix = ""): string {
@@ -971,6 +1056,144 @@ export const paymentsApi = {
 export const premiumApi = {
   getGrowthOverview: (token: string) =>
     apiRequest<GrowthOverview>("/premium/growth-overview", {}, token),
+};
+
+/**
+ * The floating AI assistant.
+ *
+ * History lives on the server as per-user conversations (`aiSessions/{uid}`),
+ * so `chat` posts only the new turn, the optional page context and a
+ * `sessionId` when continuing — the client never posts a transcript it could
+ * tamper with.
+ */
+export const aiApi = {
+  getSessions: (token: string) =>
+    apiRequest<{ items: AiChatSession[] }>("/ai/sessions", {}, token),
+
+  getSession: (token: string, sessionId: string) =>
+    apiRequest<AiChatSession>(`/ai/sessions/${sessionId}`, {}, token),
+
+  chat: (token: string, content: string, context?: string, sessionId?: string) =>
+    apiRequest<{ sessionId: string; title: string; reply: string; messages: AiChatTurn[] }>(
+      "/ai/chat",
+      {
+        method: "POST",
+        body: JSON.stringify({ content, context, sessionId }),
+      },
+      token
+    ),
+
+  /**
+   * Streaming variant of `chat`. POSTs and reads the Server-Sent Events body,
+   * calling `onDelta` for each fragment and resolving with the final transcript
+   * once the server emits its `{ done }` frame. The server is only a transport:
+   * it persists the full reply itself, so an aborted stream simply means the
+   * partial text was never stored.
+   */
+  chatStream: async (
+    token: string,
+    content: string,
+    options: {
+      context?: string;
+      sessionId?: string;
+      signal?: AbortSignal;
+      onDelta: (delta: string) => void;
+    }
+  ): Promise<{ sessionId: string; title: string; reply: string; messages: AiChatTurn[] }> => {
+    const response = await fetch(`${API_URL}/ai/chat/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        content,
+        context: options.context,
+        sessionId: options.sessionId,
+      }),
+      signal: options.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      const error = await response
+        .json()
+        .catch(() => ({ message: `HTTP error ${response.status}` }));
+      throw new ApiError(
+        error.message || `HTTP error ${response.status}`,
+        response.status
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let final: {
+      sessionId: string;
+      title: string;
+      reply: string;
+      messages: AiChatTurn[];
+    } | null = null;
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+
+          const line = frame.split("\n").find((part) => part.startsWith("data:"));
+          if (!line) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+
+          let event: {
+            delta?: string;
+            done?: boolean;
+            error?: string;
+            sessionId?: string;
+            title?: string;
+            reply?: string;
+            messages?: AiChatTurn[];
+          };
+          try {
+            event = JSON.parse(payload);
+          } catch {
+            continue;
+          }
+
+          if (event.error) throw new ApiError(event.error, 502);
+          if (event.delta) options.onDelta(event.delta);
+          if (event.done && event.sessionId && event.messages) {
+            final = {
+              sessionId: event.sessionId,
+              title: event.title ?? "",
+              reply:
+                event.reply ??
+                event.messages[event.messages.length - 1]?.content ??
+                "",
+              messages: event.messages,
+            };
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (!final) throw new ApiError("AI_EMPTY_RESPONSE", 502);
+    return final;
+  },
+
+  deleteSession: (token: string, sessionId: string) =>
+    apiRequestNoContent(`/ai/sessions/${sessionId}`, { method: "DELETE" }, token),
+
+  deleteAllSessions: (token: string) =>
+    apiRequestNoContent("/ai/sessions", { method: "DELETE" }, token),
 };
 
 export const progressApi = {

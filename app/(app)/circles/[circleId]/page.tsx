@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import Avatar from "@/components/Avatar";
+import { CircleDiscussion } from "@/components/circles/CircleDiscussion";
 import CircleMembersPanel from "@/components/circles/CircleMembersPanel";
 import {
   flattenMemberPages,
@@ -20,6 +21,7 @@ import {
   useCircleMembers,
 } from "@/hooks/useCircles";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAiContext } from "@/contexts/AiContext";
 import { timeAgo } from "@/lib/timeAgo";
 import type { UpdateCircleInput } from "@/types";
 
@@ -58,6 +60,22 @@ export default function CircleDetailPage() {
   const circleQuery = useCircle(circleId);
   const membersQuery = useCircleMembers(circleId);
   const actions = useCircleActions();
+  const { setContext } = useAiContext();
+
+  useEffect(() => {
+    if (circleQuery.data?.name) {
+      const circle = circleQuery.data;
+      setContext(
+        `You are on a page for a growth circle named "${circle.name}".` +
+          (circle.topic ? ` Its topic is ${circle.topic}.` : "") +
+          (circle.description
+            ? ` Description: ${circle.description}`
+            : ""),
+      );
+    } else {
+      setContext("");
+    }
+  }, [circleQuery.data, setContext]);
 
   const circle = circleQuery.data ?? null;
   const members = flattenMemberPages(membersQuery.data);
@@ -360,6 +378,16 @@ export default function CircleDetailPage() {
           error={actions.error}
         />
       </div>
+
+      {isMember ? (
+        <div className="mt-4">
+          <CircleDiscussion
+            circleId={circle.id}
+            circleName={circle.name}
+            canModerate={viewerRole === "OWNER" || viewerRole === "ADMIN"}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
